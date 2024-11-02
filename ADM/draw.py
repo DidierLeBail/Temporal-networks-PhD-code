@@ -2,33 +2,18 @@ import os
 import sys
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(PROJECT_ROOT)
-import Librairies.Temp_net as tp
-from Librairies.settings import Raw_to_binned,XP_data,Setup_Plot,Vector_distance,Get_versions,Load_instance_param,obs_to_type,type_to_obs,Load_obs
+from Librairies.settings import Raw_to_binned,XP_data,Setup_Plot,Vector_distance,Get_versions,Load_instance_param,obs_to_type,type_to_obs,Load_obs,Distance_obs
 from Librairies.atn import ADM_class
 
 import numpy as np
-import math
 import networkx as nx
-import random as rd
 from sklearn import linear_model
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
 from matplotlib.markers import MarkerStyle
 from scipy.stats import kendalltau,kstest
-from scipy.optimize import curve_fit
 
-def f(x,alpha,beta,shift):
-	return -alpha*x - beta*np.power(10,x) + shift
-
-#estimate the power-laws exponent and exponential cutoff of the distribution data
-def Param(X,Y):
-	return curve_fit(f,X,Y,p0=[1,0,0],bounds=([0,0,-np.inf],np.inf))[0]
-
-#return the distance btw the distributions of respective parameters param1 and param2
-def Param_dist(param1,param2):
-	d1 = abs(np.arctan(param1[0])-np.arctan(param2[0]))
-	return (1-np.exp(-d1*16/np.pi))/(1-np.exp(-8))
 
 #return the cosine similarity btw the two lists of ETN etn1 and etn2
 def Cosim(etn1,etn2):
@@ -38,17 +23,6 @@ def Cosim(etn1,etn2):
 	for key in set(etn1.keys()).intersection(set(etn2.keys())):
 		s += etn1[key]*etn2[key]
 	return s/sqrt(norm1*norm2)
-
-#compute the distance btw empirical distributions obs1 and obs2 exploiting the fact they are power-like
-def Power_dist(obs1,obs2):
-	#first use log-binning to enhance the quality of the raw power-laws
-	X1,Y1 = Raw_to_binned(obs1)
-	X2,Y2 = Raw_to_binned(obs2)
-	#then use regression to evaluate the power-law exponent as well as the exponential cutoff
-	param1 = Param(X1,Y1)
-	param2 = Param(X2,Y2)
-	#finally compute the normalized distance
-	return Param_dist(param1,param2)
 
 #draw the fitness accross generations of the model version_nb adapting to the dataset name
 def Fitness(name,version_nb):

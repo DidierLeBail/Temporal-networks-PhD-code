@@ -4,7 +4,7 @@ Here is available the code used in the papers [Modeling framework unifying conta
 
 The code is organized as follows.
 
-## data
+I.  data
 This folder contains the data of face-to-face social interactions in several contexts (school, conference, workplace, hospital, village and group of baboons).
 These data come under the form of a table with three columns:
 (1) the time of interaction, (2) and (3) the labels of the agents interacting at that time.
@@ -18,7 +18,7 @@ Labels of nodes are also rescaled, as integers ranging from 0 to number of nodes
 ### original data
 Contains the raw data of interactions as we found it on SocioPatterns.
 
-## Papers
+II.  Papers
 Here you will find the code used to produce the material used in the two aforementioned papers.
 If you want a full understanding of this code, it is better first to look at the folders whose description follows.
 

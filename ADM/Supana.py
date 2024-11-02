@@ -208,11 +208,6 @@ def KS_intr(version_nb,name):
 		node_weight = Load_node_weight((version_nb,name),option='raw')
 		return int(ks_2samp(node_weight,[a]*len(node_weight))[1]>0.05)
 
-#perform the KS test to compare the rescaled node weights of model instances and their
-#associated references
-def KS_model_XP_node_weight():
-	pass
-
 #for a model instance, display on the same figure the node weight
 #and node intrinsic activity histograms
 def Display_both(version_nb,name):
@@ -231,21 +226,6 @@ def Display_both(version_nb,name):
 	ax.legend(fontsize=16)
 	namefig = 'V'+str(version_nb)+name
 	plt.savefig('figures/node_weight/distr_both_'+namefig+'.png')
-
-#draw the node weight distribution
-def Power_plane_display_distr(dataset):
-	if type(dataset)==tuple:
-		path = 'ADM_class_V'+str(dataset[0])+'/'; name = dataset[1]
-		namefig = 'V'+str(dataset[0])+name
-	else:
-		path = ''; name = dataset
-		namefig = name
-	data = Load_distribution('analysis/'+path+name,'node_weight')
-	xlabel = r"$\log_{10}(a)$"; ylabel = r"$\log_{10}(P)$"
-	fig,ax = Setup_Plot(xlabel,ylabel)
-	central_point = max(data.keys(),key=lambda key:data[key])
-	ax.plot(*Raw_to_binned(data,nb=50,central_point=central_point),'.')
-	plt.savefig('figures/node_weight/distr_'+namefig+'.png')
 
 #plot the node activity histogram for aggregation level agg
 def Get_node_act(agg,name):
@@ -267,7 +247,7 @@ def Get_node_act(agg,name):
 	plt.ylabel(r"$P$")
 	tab = np.log10(node_act)-np.log10(t)
 	values,bins = plt.hist(tab,density=True,label='XP histo')[:2]
-	
+
 	a = np.min(tab); b = np.max(tab)
 	#estimate the parameter mu
 	bin_min = len(bins)-3

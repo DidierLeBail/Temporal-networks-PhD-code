@@ -243,7 +243,7 @@ class Proximity_tensor:
 			list_val.append(self.tensor[i_obs,self.name_to_int[name],i_mod])
 		model_med = np.quantile(list_val,0.5)
 		self.score[i_obs,i_mod] = (self.stat_XP[i_obs,1]-model_med)/(self.stat_XP[i_obs,2]-self.stat_XP[i_obs,0])
-	
+
 	#compute the score of the XP dataset name wrt the observable name_obs
 	def Score_XP(self,name_obs,name):
 		i_mod = self.name_to_int[name]
@@ -394,7 +394,7 @@ class Proximity_tensor:
 			obs = self.int_to_obs[t]
 			res[obs] = slope
 		return res,intercept
-	
+
 	def Get_reg_score(self,n2,slopes,intercept,option='mean',list_obs='all'):
 		avg_fitness,X,newt_to_t = self.Load_data_reg_fitness_score(n2,option=option,list_obs=list_obs)
 		regr = linear_model.LinearRegression()
@@ -1127,7 +1127,7 @@ def Dic_tensor(n2,block_XP=True,option='tuned'):
 				res[name_obs][model_name][name] = Distance_obs[type_obs](obs1,obs2)
 				res[name_obs][name][model_name] = res[name_obs][model_name][name]
 	#save the block XP_model
-	for name_obs,dic in res.items(): 
+	for name_obs,dic in res.items():
 		first_row = ['&']+['ADM_class_V'+str(version_nb) for version_nb in range(1,n2+1)]
 		tab = [first_row]
 		for name1 in XP_data:
@@ -1619,7 +1619,7 @@ def KS_float_param():
 	ax.set_ylabel('p value',fontsize=fontsize)
 	for label in ax.get_yticklabels():
 		label.set_fontsize(fontsize)
-	plt.savefig('figures/best_param/float_param/KS_test.png')	
+	plt.savefig('figures/best_param/float_param/KS_test.png')
 
 #for float parameters, we compute the distribution for each parameter over all references and versions
 def Visu_float_param():
@@ -2194,38 +2194,3 @@ dic_group = {('blue','group I'):group1,('red','group II'):group2,('green','group
 #tensor = Init_tensor(19,'tuned')
 #nb_mod = 19
 #tensor.Pearson_fitness_score(nb_mod,aggregator='mean')
-
-#new model
-#the node wanders randomly, he has interest, or a priori A_i,j, when he encounters j with high a priori,
-#he tries to interact with him and then update A_i,j. If he observes something that contradicts
-#his estimation, e.g. two partners of very different interest for him are discussing together,
-#he tries to join the conversation so that A_i,j matches his observations
-#(i believes that A_i,j satisfies homophily).
-#I_i,j is the real interest i experiences when discussing with j, based on I_i,j i will update A_i,j, taking
-#into account the homophily.
-#Q_i,j is the quantity of information i can communicate to j. Once i has emitted all possible information
-#to j, he has nothing left to say to him. Q_i,j depends on the level of confidentiality of the info.
-#types of information : personal info : public info (work subject, labo, workplace, ...), private info
-#(family, hobbies, personal tastes, ...) ;
-#info about the environement : subject of the conference, architecture of the building, weather, ...
-#public info about the others : number of people, crowd flows, language or habbits observed, ...
-#private info about the others : friendships among the others, appreciation btw others,
-#family of others, hobbies, ...
-#when i and j encounter, they first exchange public info and then they decide whether or not they share
-#more confidential information (threshold process). If yes, their friendship strengthens, if not, they
-#just interact until all information of the chosen level of confidentiality has been exchanged.
-#i can be inactive because he needs time to wander through the space and inspect the other agents :
-#i inspects agents one by one, checks that A_i,j is compatible with observations and switches to another
-#node, if he has not decided to interact.
-#also, agents receive information from the environement that affects A_i,j (e.g. i assisted to a conference
-#given by j and concludes that he should speak to j later), and brings it closer to the real value I_i,j
-
-#each node has an a priori on other nodes --> matrix A_i,j, which is a belief about how interesting it would
-#be for i to discuss with j. A_i,j is updated through homophily and interaction i--j
-#I_i,j is the matrix of real interest, i.e. how interesting it really is for i to discuss with j
-#when i and j first encounter, they exchange information at a high rate, but then they have nothing left to
-#say, so the information flow is lower --> either this flow vanishes completely (i and j stop interacting)
-#or it stabilizes (i and j become long-term partners)
-
-#fitness, or objective function : what is the objective of an individual ?
-#a priori each individual has its own goal, but what parameters can he take into account ?

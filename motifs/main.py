@@ -394,7 +394,7 @@ class Gluing_mat(Gluing_mat1d):
 		#memorize the numbers already computed
 		self.hash_dic = {}
 		super(Gluing_mat,self).__init__()
-	
+
 	#return the successor of the integer valued matrix of size len(n)xlen(m)
 	#used in Exact_gluing_mat
 	def Succ_mat(self,block,n,m):
@@ -821,10 +821,54 @@ class Motifs_tp:
 		n1 = 0; n_max = np.size(self.data,0)
 		for n in range(1,n_max):
 			if self.data[n,0]>self.data[n-1,0]:
-				self.data_time += [[n1,n]]
+				self.data_time += [[self.data[n-1,0],n1,n]]
 				n1 = n
 		#take care of the last line of data
-		self.data_time += [[n1,n_max]]
+		self.data_time += [[tij_data[n,0],n1,n_max]]
+
+	#return a list of formatted tables tij, each corresponding to one day
+	def Split_days(self):
+		self.Get_data_time()
+
+		#list of indices in data_time separating the days
+		day_indices = [0]
+		#time resolution: smallest step btw two consecutive measures
+		resolution = self.data_time[1][0] - self.data_time[0][0]
+		for ind,el in enumerate(self.data_time[1:],start=1):
+			step = el[0] - self.data_time[ind-1][0]
+			if step>50*resolution:
+				day_indices += [ind-1,ind]
+		day_indices.append(len(self.data_time)-1)
+		#day_couples[k] = (start,end) the start and end of the day as indices of data_time
+		day_couples = [(day_indices[2*k],day_indices[2*k+1]) for k in range(len(day_indices)//2)]
+
+		#remove the days that contain too few data
+		#day_info[day] = (nb of measured times in the day , nb of interactions in the day)
+		day_info = {day:(day[1]-day[0],self.data_time[day[1]][2]-self.data_time[day[0]][1]) for day in day_couples}
+		avg_info = ()
+		for tab in zip(*day_info.values()):
+			avg_info += (np.mean(tab)/10,)
+		confirmed_days = [day for day,info in day_info.items() if (info>avg_info).all()]
+
+		#last check: the maximum nb of interactions measured per time step should exceed 3 on each day
+		day_info = {}
+		for day in confirmed_days:
+			max_nb = max([self.data_time[ind][2]-self.data_time[ind][1] for ind in range(day[0],day[1]+1)])
+			day_info[day] = max_nb
+		confirmed_days = [day for day,info in day_info.items() if info>3]
+
+		list_tp = []
+		for day in confirmed_days:
+			tp = Motifs_tp(self.data[self.data_time[day[0]][1]:self.data_time[day[1]][2],:])
+			tp.Format()
+			list_tp.append(tp)
+		return list_tp
+
+	def Plot_raw_timeline(self,title):
+		#plot the activity to assess the splitting
+		fig,ax = Setup_Plot(r'$t$','number of interactions',fontsize=14,title=title)
+		n1,n2 = zip(*self.data_time)
+		ax.plot(np.array(n2)-np.array(n1),'.')
 
 	#replace self.data by its formatted version, i.e. time begins at 0, two consecutive times
 	#are separated by one and nodes are numeroted from 0 to nb of nodes-1
@@ -889,57 +933,6 @@ class Motifs_tp:
 					G.add_edge(i,j,weight=1)
 		self.TN[new_nb-1].add_edges_from(G.edges)
 
-	#shuffle the times btw 0 and b-1
-	def Shuffle_start(self,b):
-		#compute self.data_time
-		self.Get_data_time()
-		#compute the new self.data_time
-		#determine the times permutation ; there are two blocks: one from 0 to b-1 fully shuffled
-		#and the other from b to the end not shuffled at all
-		new_data_time = rd.sample(self.data_time[:b],b)+self.data_time[b:]
-		self.data_time = new_data_time.copy()
-
-	#compute the weighted interaction graph at aggregation level agg (sliding aggregation)
-	def Get_weighted_TN(self,agg):
-		#compute self.data_time
-		self.Get_data_time(); nb_time = len(self.data_time)
-		new_nb = nb_time-agg+1
-		#self.TN[t] = aggregated graph of interactions on t^th time interval
-		self.TN = [nx.Graph() for _ in range(new_nb)]
-		#initial graph
-		G = nx.Graph()
-		for k in range(agg):
-			for n in range(*self.data_time[k]):
-				i,j = self.data[n,1:]
-				if G.has_edge(i,j):
-					G[i][j]['weight'] += 1
-				else:
-					G.add_edge(i,j,weight=1)
-		for t in range(new_nb-1):
-			for edge in G.edges(data=True):
-				self.TN[t].add_edge(*edge[:-1],weight=edge[-1]['weight'])
-			#remove edges from time t
-			for n in range(*self.data_time[t]):
-				i,j = self.data[n,1:]
-				if G[i][j]['weight']==1:
-					G.remove_edge(i,j)
-				else:
-					G[i][j]['weight'] -= 1
-			#add edges from time t+agg
-			for n in range(*self.data_time[t+agg]):
-				i,j = self.data[n,1:]
-				if G.has_edge(i,j):
-					G[i][j]['weight'] += 1
-				else:
-					G.add_edge(i,j,weight=1)
-		for edge in G.edges(data=True):
-			self.TN[new_nb-1].add_edge(*edge[:-1],weight=edge[-1]['weight'])
-
-	def Edge_to_ind(self,i,j):
-		if i>j:
-			i,j = j,i
-		return i*(2*self.N-i-1)//2 + j-i-1
-
 	#return seq,list_interactions where list_interactions[k] = (i,j,tau) with 0<=tau<depth
 	def Compute_ECTN_env(self,t,ind,depth):
 		list_interactions = []
@@ -997,168 +990,6 @@ class Motifs_tp:
 		if dir_seq<rev_seq:
 			return central_profile+dir_seq,list_interactions
 		return central_profile+rev_seq,list_interactions
-
-	#stat_f[(i,j)][l][a] = nb of times the node l has ECTN profile a wrt nodes i and j
-	#stat_Omega[(i,j)][n] = nb of times the ECTN centered on the edge (i,j) has n satellites
-	#stat_f_c[(i,j)][c] = nb of times the edge i,j has NCTN profile c
-	def Add_stat_f(self,stat_f,stat_f_c,stat_Omega,centered_inst1,centered_inst,central_edges,t,depth):
-		for ind in central_edges:
-			#dic[prof] = list of nodes with prof as ECTN activity profile wrt the central edge ind
-			dic,central_prof = self.Compute_ECTN_env(t,ind,depth)
-			for prof,list_nodes in dic.items():
-				for l in list_nodes:
-					Increase_dic(stat_f,(prof,l,ind))
-			Increase_dic(stat_Omega,(sum([len(val) for val in dic.values()]),ind))
-			Increase_dic(stat_f_c,(central_prof,ind))
-			#update centered_inst1 and centered_inst:
-			#check whether i or j is associated to the letter '1'
-			seq1 = ''; seq2 = ''
-			list_prof1 = []; list_prof2 = []
-			for prof,val in dic.items():
-				list_prof1 += [prof]*len(val)
-				list_prof2 += [ETN.Swap_conv_ECTN(prof)]*len(val)
-			seq1 = ''.join(sorted(list_prof1))
-			seq2 = ''.join(sorted(list_prof2))
-			if seq1<seq2:
-				Increase_dic(centered_inst1,(ind,))
-			Increase_dic(centered_inst,(ind,))
-
-	#return the set of satellites of the ECTN centered on ind and starting at t
-	def Get_ECTN_ngh(self,t,ind,depth):
-		set_ngh = set()
-		i,j = ind
-		for tau in range(depth):
-			if i in self.TN[t+tau]:
-				set_ngh = set_ngh.union(set(self.TN[t+tau].neighbors(i)))
-			if j in self.TN[t+tau]:
-				set_ngh = set_ngh.union(set(self.TN[t+tau].neighbors(j)))
-		set_ngh.remove(i)
-		set_ngh.remove(j)
-		return set_ngh
-
-	def Add_stat_f_empty(self,stat_f,stat_f_empty,central_edges,t,depth):
-		for ind in central_edges:
-			if ind in stat_f:
-				set_ngh = self.Get_ECTN_ngh(t,ind,depth)
-				for l in stat_f[ind]:
-					if not l in set_ngh:
-						Increase_dic(stat_f_empty,(l,ind))
-
-	#stat_f_empty[(i,j)][l] = nb of times the node l has empty ECTN profile wrt nodes i and j, given
-	#(i,j) has a non-empty NCTN profile
-	#we compute stat_f_empty only for the keys common to stat_f
-	def Compute_stat_f_empty(self,stat_f,depth):
-		stat_f_empty = {}
-		list_times = range(len(self.TN)-depth+1)
-		#cumulate the interactions on depth time steps to keep track of the central edges
-		dic_central_edges = {}
-		for tau in range(depth):
-			for edge in self.TN[tau].edges:
-				if edge[0]<edge[1]:
-					ind = edge
-				else:
-					ind = edge[::-1]
-				if ind in dic_central_edges:
-					dic_central_edges[ind] += 1
-				else:
-					dic_central_edges[ind] = 1
-		self.Add_stat_f_empty(stat_f,stat_f_empty,dic_central_edges.keys(),0,depth)
-		for t in list_times[1:]:
-			#remove the edges from time t-1
-			for edge in self.TN[t-1].edges:
-				if edge[0]<edge[1]:
-					ind = edge
-				else:
-					ind = edge[::-1]
-				dic_central_edges[ind] -= 1
-			#add the edges from time t+depth-1
-			for edge in self.TN[t+depth-1].edges:
-				if edge[0]<edge[1]:
-					ind = edge
-				else:
-					ind = edge[::-1]
-				if ind in dic_central_edges:
-					dic_central_edges[ind] += 1
-				else:
-					dic_central_edges[ind] = 1
-			edges_to_remove = {ind for ind,nb in dic_central_edges.items() if nb<=0}
-			for ind in edges_to_remove:
-				del dic_central_edges[ind]
-			#update the EdgeTN histogram
-			self.Add_stat_f_empty(stat_f,stat_f_empty,dic_central_edges.keys(),t,depth)
-		#normalize
-		for key,dic in stat_f_empty.items():
-			for l,val in dic.items():
-				stat_f_empty[key][l] = val/len(list_times)
-		return stat_f_empty
-
-	#compute the statistics required to apply the second hypothesis of independence
-	def Stat_hyp2(self,depth):
-		#n1 = nb of motifs instances centered on (i,j) whose letter '1' is associated to i
-		#n2 = nb of motifs instances centered on (i,j)
-		#n3 = nb of motifs instances --> deduced from n2
-		#P(M) = \sum_{ij} P(C=ij)P(M|C=ij)
-		#P(C=ij) = n2/n3
-		#P(M|C=ij) = (n1/n2)*[P(M|C=ij,i='1') - P(M|C=ij,i='2')] + P(M|C=ij,i='2')
-		#P(M|C=ij,i='1') is computed from a theoretical expression
-		########################
-		#centered_inst[(i,j)] = nb of motifs instances centered on (i,j)
-		centered_inst = {}
-		#centered_inst1[(i,j)] = nb of motifs instances centered on (i,j)
-		#whose letter '1' is associated to i
-		centered_inst1 = {}
-		#stat_f_c[(i,j)][c] = nb of times the edge i,j has NCTN profile c given empty profile excluded
-		stat_f_c = {}
-		#stat_Omega[(i,j)][n] = nb of times (i,j) has n satellites given (i,j) has a non-empty NCTN profile
-		stat_Omega = {}
-		#stat_f[(i,j)][l][a] = nb of times the node l has ECTN profile a wrt nodes i and j, where
-		#the writing convention in the profile a is we associate the letter '1' to i
-		#(only non-empty profiles are counted)
-		stat_f = {}
-		list_times = range(len(self.TN)-depth+1)
-		#cumulate the interactions on depth time steps to keep track of the central edges
-		dic_central_edges = {}
-		for tau in range(depth):
-			for edge in self.TN[tau].edges:
-				if edge[0]<edge[1]:
-					ind = edge
-				else:
-					ind = edge[::-1]
-				if ind in dic_central_edges:
-					dic_central_edges[ind] += 1
-				else:
-					dic_central_edges[ind] = 1
-		self.Add_stat_f(stat_f,stat_f_c,stat_Omega,centered_inst1,centered_inst,dic_central_edges.keys(),0,depth)
-		for t in list_times[1:]:
-			#remove the edges from time t-1
-			for edge in self.TN[t-1].edges:
-				if edge[0]<edge[1]:
-					ind = edge
-				else:
-					ind = edge[::-1]
-				dic_central_edges[ind] -= 1
-			#add the edges from time t+depth-1
-			for edge in self.TN[t+depth-1].edges:
-				if edge[0]<edge[1]:
-					ind = edge
-				else:
-					ind = edge[::-1]
-				if ind in dic_central_edges:
-					dic_central_edges[ind] += 1
-				else:
-					dic_central_edges[ind] = 1
-			edges_to_remove = {ind for ind,nb in dic_central_edges.items() if nb<=0}
-			for ind in edges_to_remove:
-				del dic_central_edges[ind]
-			#update the EdgeTN histogram
-			self.Add_stat_f(stat_f,stat_f_c,stat_Omega,centered_inst1,centered_inst,dic_central_edges.keys(),t,depth)
-		#normalize
-		norm = 1/len(list_times)
-		for key,dic in stat_f.items():
-			for key1,dic1 in dic.items():
-				for a,val in dic1.items():
-					stat_f[key][key1][a] = val*norm
-		return stat_f,Norm_dic_histo(stat_f_c),Norm_dic_histo(stat_Omega),centered_inst1,centered_inst
 
 	#compute the binary string representration of the NCTN instance starting at time t of central node v
 	#and given depth
@@ -1387,57 +1218,6 @@ class Motifs_tp:
 				histo[seq[i*depth:(i+1)*depth]] += nb
 		return Norm_dic_histo(histo)
 
-	#probability of the profiles for a satellite or a central edge in ECTN under ind hyp 2
-	#central_histo for the central edge and sat_histo for satellites
-	def Get_ECTN_sat_histo2(self,dic_ECTN,depth):
-		central_prof,sat_prof = ETN.All_ECTN_profiles(depth)
-		true_sat_prof = {Rewrite_ECTN_prof_sym12(seq) for seq in sat_prof}
-		central_histo = {seq:0 for seq in central_prof}
-		sat_histo = {seq:0 for seq in true_sat_prof}
-		for seq,nb in dic_ECTN.items():
-			#activity profile of the central edge
-			central_histo[seq[:depth]] += nb
-			#activity profiles of satellites
-			for i in range(1,len(seq)//depth):
-				sat_histo[Rewrite_ECTN_prof_sym12(seq[i*depth:(i+1)*depth])] += nb
-		return Norm_dic_histo(central_histo),Norm_dic_histo(sat_histo)
-
-	#probability of the profiles for a satellite or a central edge in ECTN under ind hyp 3, 4 or 5
-	#central_histo for the central edge and sat_histo for satellites
-	def Get_ECTN_sat_histo3(self,dic_ECTN,depth):
-		central_prof,sat_prof = ETN.All_ECTN_profiles(depth)
-		true_sat_prof = {Rewrite_ECTN_prof_sym12(seq) for seq in sat_prof}
-		central_histo = {seq:0 for seq in central_prof}
-		sat_histo = {}
-		for seq,nb in dic_ECTN.items():
-			#activity profile of the central edge
-			central_histo[seq[:depth]] += nb
-			if not seq[:depth] in sat_histo:
-				sat_histo[seq[:depth]] = {seq:0 for seq in true_sat_prof}
-			#activity profiles of satellites
-			for i in range(1,len(seq)//depth):
-				new_seq = Rewrite_ECTN_prof_sym12(seq[i*depth:(i+1)*depth])
-				sat_histo[seq[:depth]][new_seq] += nb
-		return Norm_dic_histo(central_histo),Norm_dic_histo(sat_histo)
-
-	#return 0<q<1 such that P(inst_deg of a node at a time = n) \propto q^{n}
-	def Interp_inst_deg_proba(self,dic_NCTN,depth):
-		#histogram of the nb of satellites (aggregated degree at agg=depth)
-		histo_sat = {}
-		for seq,nb in dic_NCTN.items():
-			nb_sat = len(seq)//depth
-			if nb_sat in histo_sat:
-				histo_sat[nb_sat] += nb
-			else:
-				histo_sat[nb_sat] = nb
-		#log(P(n)) = cste + n*log(q)
-		X,Y = zip(*histo_sat.items())
-		Y = np.log(np.asarray(Y)); X = np.asarray(X)
-		#perform linear regression to extract log(q)
-		x_m = np.mean(X); y_m = np.mean(Y)
-		beta = np.sum((X-x_m)*(Y-y_m))/np.sum((X-x_m)**2)
-		return np.exp(beta)
-
 	#return the node degree distribution, degree zero included if zero==True
 	def Get_direct_deg_histo(self,zero=False):
 		res = {}
@@ -1471,59 +1251,10 @@ class Motifs_tp:
 			histo_sat[key] = val/norm
 		return histo_sat
 
-	#return the distr of the nb of satellites in ECTN (hyp ind 1, 2 and 3)
-	def ECTN_nb_sat1(self,dic_ECTN,depth):
-		deg_histo = {}
-		for seq,nb in dic_ECTN.items():
-			deg = len(seq)//depth-1
-			if deg in deg_histo:
-				deg_histo[deg] += nb
-			else:
-				deg_histo[deg] = nb
-		return Norm_dic_histo(deg_histo)
-
-	#return the distr of the nb of satellites in ECTN conditioned on the central profile (hyp ind 4)
-	def ECTN_nb_sat4(self,dic_ECTN,depth):
-		deg_histo = {}
-		for seq,nb in dic_ECTN.items():
-			deg = len(seq)//depth-1
-			prof = seq[:depth]
-			if prof in deg_histo:
-				if deg in deg_histo[prof]:
-					deg_histo[prof][deg] += nb
-				else:
-					deg_histo[prof][deg] = nb
-			else:
-				deg_histo[prof] = {deg:nb}
-		return Norm_dic_histo(deg_histo)
-
-	#return the joint distr of the nb of satellites in ECTN at depth and the number of satellites
-	#contributing to a complete triangle (for ind hyp 5)
-	def ECTN_nb_sat5(self,dic_ECTN,depth):
-		trideg_histo = {}
-		for seq,nb in dic_ECTN.items():
-			deg = len(seq)//depth-1
-			tri = 0; prof = seq[:depth]
-			for i in range(deg):
-				ok = False
-				for letter1,letter2 in zip(prof,seq[(i+1)*depth:(i+2)*depth]):
-					if letter1=='1' and letter2=='3':
-						ok = True
-				tri += int(ok)
-			key = (deg,tri)
-			if prof in trideg_histo:
-				if key in trideg_histo[prof]:
-					trideg_histo[prof][key] += nb
-				else:
-					trideg_histo[prof][key] = nb
-			else:
-				trideg_histo[prof] = {key:nb}
-		return Norm_dic_histo(trideg_histo)
-
 	#compute the NCTN proba under the strong spatial ind hypothesis
 	#return X,Y where X = true proba, Y = th proba
 	def Get_strong_ind_NCTN(self,dic_NCTN,depth):
-		#for each profile, compute the average number of given profile a NCTN contains 
+		#for each profile, compute the average number of given profile a NCTN contains
 		profiles = All_NCTN_profiles(depth)
 		avg_nb_profiles = {profile:0 for profile in profiles}
 		var_nb_profiles = {profile:0 for profile in profiles}
@@ -1578,41 +1309,6 @@ class Motifs_tp:
 				th_proba *= act_profile_proba[profile]**nb/math.factorial(nb)
 			Y.append(th_proba)
 		return X,Y
-
-	#count the nb of triangles with 1, 2 or 3 active edges
-	def Get_nb_inst_tri_open_to_closed(self):
-		nb_tri_1 = 0; nb_tri_2 = 0; nb_tri_3 = 0
-		for graph in self.TN:
-			set_tri_2 = set(); set_tri_3 = set()
-			for edge in graph.edges:
-				for ind in range(2):
-					for k in graph[edge[ind]]:
-						if graph.has_edge(k,edge[1-ind]):
-							set_tri_3.add(tuple(sorted((edge[ind],edge[1-ind],k))))
-						elif k!=edge[1-ind]:
-							set_tri_2.add(tuple(sorted((edge[ind],edge[1-ind],k))))
-			nb_tri_1 += len(graph.edges)*(self.N-len(graph.nodes))
-			nb_tri_2 += len(set_tri_2)
-			nb_tri_3 += len(set_tri_3)
-		return nb_tri_1,nb_tri_2,nb_tri_3
-
-	#return the theoretical total number of satellites
-	def Nb_sat_tot_th(self,depth):
-		self.Get_TN(depth)
-		#count the number of triangles and the number of triangles with one inactive edge
-		nb_tri = 0; nb_open_tri = 0
-		for graph in self.TN:
-			set_tri = set(); set_open_tri = set()
-			for edge in graph.edges:
-				for ind in range(2):
-					for k in graph[edge[ind]]:
-						if graph.has_edge(k,edge[1-ind]):
-							set_tri.add(tuple(sorted((edge[ind],edge[1-ind],k))))
-						elif k!=edge[1-ind]:
-							set_open_tri.add(tuple(sorted((edge[ind],edge[1-ind],k))))
-			nb_tri += len(set_tri)
-			nb_open_tri += len(set_open_tri)
-		return 3*nb_tri + 2*nb_open_tri
 
 	#compute the ECTN proba under the ind hypothesis 1
 	#return X,Y where X = true proba, Y = th proba
@@ -1670,103 +1366,8 @@ class Motifs_tp:
 		#return th proba
 		return hyp2.predict_for_fit()*hyp2.list_factors
 
-	def Get_ind3_ECTN(self,list_seq,depth):
-		#compute the statistics required to apply the second hypothesis of independence
-		#n1 = nb of motifs instances centered on (i,j) whose letter '1' is associated to i
-		#n2 = nb of motifs instances centered on (i,j)
-		#n3 = nb of motifs instances --> deduced from n2
-		#P(M) = \sum_{ij} P(C=ij)P(M|C=ij)
-		#P(C=ij) = n2/n3
-		#P(M|C=ij) = (n1/n2)*[P(M|C=ij,i='1') - P(M|C=ij,i='2')] + P(M|C=ij,i='2')
-		#P(M|C=ij,i='1') is computed from a theoretical expression
-		stat_f,stat_f_c,stat_Omega,centered_inst1,centered_inst = self.Stat_hyp2(depth)
-		print('stat_f, stat_f_c, stat_Omega, centered_inst1, centered_inst done')
-		#compute the proba p_centered1[(i,j)] that a motif instance is centered on (i,j) and i is
-		#associated to the letter '1'
-		p_centered1 = {}
-		for key,val in centered_inst1.items():
-			p_centered1[key] = val/centered_inst[key]
-		##############################################################################
-		#now the keys of stat_f have been identified, compute stat_f_empty
-		stat_f_empty = self.Compute_stat_f_empty(stat_f,depth)
-		print('stat_f_empty done')
-		#compute f_Omega[(i,j)] = avg over l of 1/stat_f_empty[(i,j)][l] - 1
-		f_Omega = {}
-		for key,dic in stat_f_empty.items():
-			f_Omega[key] = np.mean([1/val for val in dic.values()]) - 1
-		#compute f_tilde[(i,j)][a] = avg over l of stat_f[(i,j)][l][a]/stat_f_empty[(i,j)][l]
-		f_tilde = {}; ECTN_profiles = All_ECTN_profiles(depth)[1]
-		for key in stat_f_empty.keys():
-			f_tilde[key] = {a:0 for a in ECTN_profiles}
-			norm = 0
-			for l,dic1 in stat_f[key].items():
-				if l in stat_f_empty[key]:
-					norm += 1
-					for a,val in dic1.items():
-						f_tilde[key][a] += val/stat_f_empty[key][l]
-			for a in ECTN_profiles:
-				f_tilde[key][a] /= norm
-		p_prof = {}
-		for key,dic in f_tilde.items():
-			p_prof[key] = {a:0 for a in ECTN_profiles}
-			for a,val in dic.items():
-				p_prof[key][a] = val/f_Omega[key]
-		print('f_tilde, f_Omega, p_prof done')
-		#deduce the theoretical expression for the ECTN probability
-		return self.Final_step_ind3_hyp(list_seq,depth,p_prof,stat_f_c,stat_Omega,p_centered1,Norm_dic_histo(centered_inst))
-
-	#p_centered[(i,j)] = proba that a motif instance is centered on (i,j)
-	def Final_step_ind3_hyp(self,list_seq,depth,p_prof,stat_f_c,stat_Omega,p_centered1,p_centered):
-		#correct_keys[nb_sat] = set of ind that contribute to the th_proba of the ECTN
-		#with given nb_sat
-		correct_keys = {}
-		for ind,dic in stat_Omega.items():
-			if not ind in p_prof:
-				if 0 in dic:
-					if 0 in correct_keys:
-						correct_keys[0].add(ind)
-					else:
-						correct_keys[0] = {ind}
-			else:
-				for nb_sat in dic:
-					if nb_sat in correct_keys:
-						correct_keys[nb_sat].add(ind)
-					else:
-						correct_keys[nb_sat] = {ind}
-		Y = []
-		for seq in list_seq:
-			th_proba = 0; nb_profile = {}
-			nb_sat = len(seq)//depth-1
-			for i in range(1,nb_sat+1):
-				Increase_dic(nb_profile,(seq[i*depth:(i+1)*depth],))
-			nb_profile_rev = {ETN.Swap_conv_ECTN(prof):val for prof,val in nb_profile.items()}
-			central_prof = seq[:depth]
-			for ind in correct_keys[nb_sat]:
-				#if central_prof not in stat_f_c[ind], then ind cannot have produced the ECTN seq
-				if central_prof in stat_f_c[ind]:
-					#P(M|C=ij,i='1') = P(c|C=ij)*Omega_{ij}(n)*trucij
-					#P(M|C=ij,i='2') = P(c|C=ij)*Omega_{ij}(n)*trucji
-					trucij = 1; trucji = 1
-					for prof,nb in nb_profile.items():
-						if prof in p_prof[ind]:
-							trucij *= p_prof[ind][prof]**nb/math.factorial(nb)
-						else:
-							trucij = 0
-					for rev_prof,nb in nb_profile_rev.items():
-						if rev_prof in p_prof[ind]:
-							trucji *= p_prof[ind][rev_prof]**nb/math.factorial(nb)
-						else:
-							trucji = 0
-					if ind in p_centered1:
-						th_proba += stat_f_c[ind][central_prof]*stat_Omega[ind][nb_sat]*p_centered[ind]*(trucji + p_centered1[ind]*(trucij-trucji))
-					else:
-						th_proba += stat_f_c[ind][central_prof]*stat_Omega[ind][nb_sat]*p_centered[ind]*trucji
-			Y.append(th_proba*math.factorial(nb_sat))
-		return Y
-
 	#hyp1: edges are independent: P_12 = Q_10*Q_01
 	#hyp2: nodes are independent
-	#hyp3: edges are independent but heterogeneous (they have distinct and correlated states)
 	#hyp6: ECTN are induced from NCTN according to the maximum entropy principle (MEP)
 	def Get_ind_ECTN(self,list_seq,depth,hyp_nb,restrict,datapath):
 		if hyp_nb==1:
@@ -1852,21 +1453,6 @@ class Motifs_tp:
 			else:
 				edge_event[ind] = [(edge_starting_time[ind],len(self.TN)-1)]
 		return edge_event
-
-	#return the list of realizations of d_i(t+1)/d_i(t)-1 for non-zeros degrees
-	def Get_degree_ratio(self):
-		#for each node extract the degree profile: deg_profile[i,t] = degree of i at time t
-		deg_profile = np.zeros((self.N,len(self.TN)),dtype=int)
-		for t,graph in enumerate(self.TN):
-			for i in graph.nodes:
-				deg_profile[i,t] = graph.degree(i)
-		#sample d_i(t+1)/d_i(t)-1 for non-zeros degrees
-		values = []
-		for i in range(np.size(deg_profile,0)):
-			for t in range(np.size(deg_profile,1)-1):
-				if deg_profile[i,t]>0:
-					values.append(deg_profile[i,t+1]/deg_profile[i,t]-1)
-		return values
 
 	#draw the degree profile for some nodes
 	def Draw_degree_profile(self):
@@ -2051,57 +1637,6 @@ class Motifs_tp:
 				else:
 					cc_histo[n] = 1
 		return cc_histo
-
-def Check_min_ew_theory():
-	agg = 1; depth = 3
-	motifs = Motifs_tp('min_EW3_RS.txt')
-	motifs.Get_TN(agg)
-	#check ECTN proba IH 1
-	dic_ECTN = motifs.Get_dic_ECTN(depth)
-	deg_histo = motifs.ECTN_nb_sat1(dic_ECTN,depth)
-	#compute edge profile histo
-	dic_NCTN = motifs.Get_dic_NCTN(depth)
-	prof_proba = motifs.Get_act_profile_proba_NCTN(dic_NCTN,depth)
-	#Q_0 = proba of having an empty edge profile
-	motifs.Get_TN(depth)
-	Q_0 = 1-np.mean([len(graph.edges)*2/(motifs.N*(motifs.N-1)) for graph in motifs.TN])
-	for key,val in prof_proba.items():
-		prof_proba[key] = val*(1-Q_0)
-	prof_proba['0'*depth] = Q_0
-	nb_profile = {profile:0 for profile in ETN.All_ECTN_profiles(depth)[1]}
-	X = []; Y = []; norm = sum(dic_ECTN.values())
-	for seq,proba in dic_ECTN.items():
-		X.append(proba/norm)
-		nb_sat = len(seq)//depth-1
-		#nb_transverse_asym = 0
-		for i in range(1,len(seq)//depth):
-			new_seq = seq[i*depth:(i+1)*depth]
-			nb_profile[new_seq] += 1
-			#if '1' in new_seq or '2' in new_seq:
-			#	nb_transverse_asym += 1
-		#th_proba = prof_proba[seq[:depth]]*math.factorial(nb_sat)*deg_histo[nb_sat]/(1-Q_0)
-		#th_proba = (prof_proba[seq[:depth]]/(1-Q_0))*binom(motifs.N-2,nb_sat)*math.factorial(nb_sat)*Q_0**(2*(motifs.N-2-nb_sat))
-		th_proba = (prof_proba[seq[:depth]]/(1-Q_0))*math.factorial(nb_sat)*deg_histo[nb_sat]
-		for sat_profile,nb in nb_profile.items():
-			if nb>0:
-				prof1,prof2 = ETN.ECTN_to_NCTN_prof(sat_profile)
-				x = prof_proba[prof1]*prof_proba[prof2]/(1-Q_0**2)
-				th_proba *= (x**nb)/math.factorial(nb)
-		if seq!=ETN.Is_12_sym(seq,depth):
-			th_proba *= 2
-		#if nb_transverse_asym>1:
-		#	th_proba *= (2)**(nb_transverse_asym-1)
-		#if nb_sat>1:
-		#	th_proba *= (2)**(nb_sat-1)
-		Y.append(th_proba)
-		for key in nb_profile.keys():
-			nb_profile[key] = 0
-	#compare the two distributions
-	fontsize = 16; xlabel = 'xp_proba'; ylabel = 'th_proba'
-	fig,ax = Setup_Plot(xlabel,ylabel,fontsize=fontsize)
-	ax.plot(X,Y,'.')
-	ax.plot(X,X,'--')
-	plt.show()
 
 def Compare_NCTN_to_theory(P_01,P_11,lamb):
 	depth = 2
@@ -2888,78 +2423,6 @@ def Workflow_ECTN_ratios_TR_sym():
 	Compute_ratios_ECTN_TR(agg,transverse=True)
 	Plot_ratios_ECTN_TR(agg,transverse=True)
 
-#returns the R^2 coefficient of the regression X-->X by X-->Y
-def Get_Rsquare(X,Y):
-	#sum of residual squares
-	SS_res = np.sum((X-Y)**2)
-	#sum of total squares
-	SS_tot = np.sum((X-np.mean(X))**2)
-	return 1-SS_res/SS_tot
-
-#for each TN, we plot the R^2 coefficient vs ind hyp strength for ECTN of depth 2 and 3
-def Plot_all_ind_hyp_ECTN(list_names,agg,choice):
-	add_name = ''
-	if choice=='max':
-		ylabel = 'norm infinity coefficient of adequation'
-	else:
-		ylabel = 'R square coefficient of adequation'
-	prefix = 'figures/ECTN/ind_hyp/'
-	for name in list_names:
-		list_R_coeff = np.loadtxt(prefix+name+'/codata/Workflow_ind_hyp_agg'+str(agg)+choice+'.txt')
-		figpath = prefix+name+'/Workflow_ind_hyp_agg'+str(agg)+choice+'.png'
-		fontsize = 14
-		X = [int(el) for el in list_R_coeff[0,1:]]
-		xlabel = 'hypothesis of independence number'
-		fig,ax = Setup_Plot(xlabel,ylabel,fontsize=fontsize)
-		for k in range(1,np.size(list_R_coeff,axis=0)):
-			depth = int(list_R_coeff[k,0])
-			ax.plot(X,list_R_coeff[k,1:],LIST_MARKER[k-1],markersize=10,color=LIST_COLOR[k-1],label='depth = '+str(depth))
-		ax.legend(fontsize=fontsize)
-		plt.savefig(figpath)
-		plt.close()
-
-#same as Workflow_ind_hyp but for a single data set (name)
-def Workflow_ind_hyp_single(agg,name,where=None):
-	prefix = 'figures/ECTN/ind_hyp/'
-	func_R_coeff = {'':Get_Rsquare,'log':lambda X,Y:Get_Rsquare(np.log10(X),np.log10(Y))}
-	func_R_coeff['max'] = lambda X,Y:np.max(np.abs(X-Y))/np.max(Y)
-	motifs = Motifs_tp(name,where=where)
-	motifs.Get_TN(agg)
-	dic_R_coeff = {}
-	for key in ['','log','max']:
-		dic_R_coeff[key] = np.zeros((3,6))
-		for i in range(2):
-			dic_R_coeff[key][i+1,0] = i+2
-		for j in range(1,6):
-			dic_R_coeff[key][0,j] = j
-	for depth in [2,3]:
-		print('\t depth: '+str(depth))
-		dic_ECTN = motifs.Get_dic_ECTN(depth)
-		for hyp_nb in range(1,6):
-			print('\t\t hyp_nb: '+str(hyp_nb))
-			X,Y = motifs.Get_ind_ECTN(dic_ECTN,depth,hyp_nb)
-			#compute the R^2 coef
-			for key,func in func_R_coeff.items():
-				dic_R_coeff[key][depth-1,hyp_nb] = func(np.array(X),np.array(Y))
-	#save data
-	datapath = prefix+name+'/codata/'
-	Check_is_dir(datapath)
-	for add_name,list_R_coeff in dic_R_coeff.items():
-		np.savetxt(datapath+'Workflow_ind_hyp_agg'+str(agg)+add_name+'.txt',list_R_coeff)
-
-#complete workflow for evaluating the 5 ECTN ind hyp for every TN and depth 2 and 3:
-#for each TN, we compute the R^2 coefficient vs ind hyp strength
-#compute also the maximum gap (norm infinity) btw the th and xp ECTN proba + plot this gap vs ind hyp
-#strength + save the motifs responsible for this gap
-def Workflow_ind_hyp(agg):
-	list_names = Get_tot_TN_not_randomized() + ['ADM17utah','ADM17conf16','ADM19conf16','min_EW3_RS.txt']
-	for name in list_names:
-		print(name+' begins')
-		Workflow_ind_hyp_single(agg,name)
-	#plot results
-	for choice in ['','log','max']:
-		Plot_all_ind_hyp_ECTN(list_names,agg,choice)
-
 #compute the ECTN and xp_probas for name,namepath for depths 2 and 3, then save data
 def Collect_ECTN(agg,name,namepath):
 	prefix = 'figures/ECTN/ind_hyp/'
@@ -3731,7 +3194,7 @@ class Motifs_analyze:
 		for depth in [2,3]:
 			print('\tdepth: '+str(depth))
 			datapath = self.prefix+name+self.suffix+str(depth)
-			
+
 			#collect the NCTN
 			if collect:
 				list_seq,xp_proba = zip(*mtp.Get_dic_NCTN(depth).items())
@@ -3832,7 +3295,7 @@ class Motifs_analyze:
 				dominant_mode.append((diff,2))
 			else:
 				dominant_mode.append((diff,1))
-		
+
 		#aggregate dominant_mode on a sliding window
 		for choice,mode in zip(['diff','tot'],zip(*dominant_mode)):
 			b = 10
@@ -3841,7 +3304,7 @@ class Motifs_analyze:
 			for k in range(len(mode)-b):
 				s += mode[k+b]-mode[k]
 				res.append(s)
-			
+
 			list_times = np.array(list(dic_ECTN.keys()))
 			#plot the results
 			fig,ax = plt.subplots(2,1,constrained_layout=True)
@@ -4185,7 +3648,7 @@ def Visu_Juliette():
 def Build_original_TN_with_multiple_days():
 	dic = {}
 	prefix = PROJECT_ROOT+'/data/original_tij/'
-	
+
 	##empirical TN
 	folder = 'empirical/'
 	#conferences
@@ -4205,7 +3668,7 @@ def Build_original_TN_with_multiple_days():
 
 	for old_name,name in zip(old_names,new_names):
 		dic[name] = prefix + folder + old_name
-	
+
 	##Giulia data sets
 	folder = 'reseaux_Giulia/'
 
@@ -4306,7 +3769,7 @@ def Complete_workflow_ind_hyp(hyp_nb,restrict):
 	mta = Motifs_analyze('',hyp_nb=hyp_nb,restrict=restrict)
 	#build list_names
 	family_to_name,name_to_cs,marker_to_label,list_names = Get_list_names_with_labels()
-	
+
 	#remove RW_periodic
 	if hyp_nb==2:
 		ind = 0
@@ -4602,7 +4065,7 @@ for depth in [2,3]:
 	ax.plot(*zip(*histo.items()),'.')
 	plt.savefig(PROJECT_ROOT+'/manuscript/chapter5/omega_hyp/diversity'+name+'depth'+str(depth)+'.png')
 
-	
+
 	sat_histo = Norm_dic_histo(sat_histo)
 	#compute the NCTN proba in case N_{n}(m) depends only on |m|
 	xp_proba = []; th_proba = []; norm = sum(dic_NCTN.values())
@@ -4631,7 +4094,7 @@ for depth in [2,3]:
 	ax.plot(np.log10(xp_proba),np.log10(th_proba),'.')
 	ax.plot([np.log10(m),np.log10(M)],[np.log10(m),np.log10(M)],'--')
 	plt.savefig(PROJECT_ROOT+'/manuscript/chapter5/omega_hyp/xpth_probaLOG'+name+'depth'+str(depth)+'.png')
-	
+
 exit()
 '''
 def Fig_complenet2024():
@@ -4783,7 +4246,7 @@ if __name__=="__main__":
 	Analyze_Giulia()
 	print()
 	Analyze_Juliette();exit()
-	
+
 	Analyze_Utah_MEP(); exit()
 
 	agg = 1; depth = 3
@@ -4914,22 +4377,8 @@ if __name__=="__main__":
 	motifs = Motifs_tp(name)
 	motifs.Get_TN(agg)
 	motifs.Draw_degree_profile()
-	#Draw_degree_from_ratio(motifs.Get_degree_ratio())
 
 	exit()
-
-	fig,ax = plt.subplots(constrained_layout=True)
-	fontsize = 14
-	for agg,color in zip([1,10,20],['orange','red','black']):
-		print(agg)
-		motifs.Get_TN(agg)
-		ax.hist(motifs.Get_degree_ratio(),density=True,bins=20,histtype='step',label=str(agg),color=color)
-	ax.set_ylabel(r'$P$',fontsize=fontsize)
-	ax.set_xlabel(r'$\frac{d(t+1)}{d(t)}-1$',fontsize=fontsize)
-	ax.legend(fontsize=fontsize)
-	plt.show()
-	exit()
-
 
 	for name in ["conf16","utah"]:
 		print(name)

@@ -4,6 +4,41 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from Librairies.settings import Load_vector
 
+#identify a profile with its image under 1<-->2
+#also separate the transverse from single satellite profiles
+def Get_trans_single_sym12prof(satellites_prof):
+	sym_prof = {Rewrite_ECTN_prof_sym12(seq) for seq in satellites_prof}
+	trans_prof = set(); single_prof = set()
+	for seq in sym_prof:
+		#transverse profile: satellite common to both nodes of the central edge
+		if '3' in seq or '1' in seq and '2' in seq:
+			trans_prof.add(seq)
+		#single profile (note this is a NCTN profile)
+		else:
+			single_prof.add(seq)
+	return trans_prof,single_prof
+
+#rewrite an ECTN profile by exchanging 1 and 2 so that the first 1 or 2 encountered is a 1
+#allows to consider profiles under symmetry under 1<-->2
+def Rewrite_ECTN_prof_sym12(seq):
+	#find the first occurrence of a 2
+	ind_first2 = seq.find('2')
+	#if there is no 2, seq is unchanged
+	if ind_first2<0:
+		return seq
+	ind_first1 = seq.find('1')
+	#if we encounter 1 before 2, seq is unchanged
+	if ind_first1>=0 and ind_first1<ind_first2:
+		return seq
+	#exchange 1 and 2
+	new_seq = list(seq)
+	for ind,letter in enumerate(seq):
+		if letter=='2':
+			new_seq[ind] = '1'
+		elif letter=='1':
+			new_seq[ind] = '2'
+	return ''.join(new_seq)
+
 def All_NCTN_profiles(depth):
 	profiles = []; profile = ['0']*depth
 	for _ in range(1,2**depth):
@@ -208,37 +243,7 @@ def Plot_NCTN(seq,depth,ax):
 	pos = nx.spring_layout(res,pos=fixed_positions,fixed=fixed_nodes)
 	nx.draw_networkx(res,pos=pos,arrows=True,arrowstyle='-',node_color=color_map,with_labels=False,ax=ax)
 
-#given a motif, return all the possible motifs resulting from its shift in time (either forward or backward)
-#assuming this motif is the only one to occur
-def Shifted(seq,depth):
-	net = Seq_to_net(seq,depth)
-	#motifs shifted forward
-	forward = []
-	#motifs shifted backward
-	backward = []
-	seq_ = list(seq)
-	for t in range(depth):
-		new_seq = []
-		nb_nodes = len(seq_)//depth
-		for i in range(nb_nodes):
-			sign = seq[i*depth+1:(i+1)*depth] + ['0']
-			if sign!=['0']*3:
-				new_seq.append(sign)
-		new_seq.sort()
-		pass
-
-#return all the motifs of depth-1 caused by the given motif
-def SubETN(seq,depth):
-	res = []
-	pass
-	return res
-
-#!!!not optimized yet!!!
-#returns 1 if the time conjugate of the ETN is one of its shifted motifs
-def Conj_is_shifted(seq,depth):
-	return int(Time_conjugate(seq,depth) in Shifted(seq,depth))
-
-#take a motif in input and
+#take a NCTN in input and
 #return 1 if it is symmetric under time-reversal
 #and 0 else
 def Is_time_sym(seq,depth):
@@ -248,40 +253,13 @@ def Is_time_sym(seq,depth):
 	new_seq = ''.join(new_seq)
 	return new_seq==seq
 
-#take a motif in input and return its conjugate under time reversal
-def Time_conjugate(seq,depth):
+#take a NCTN as input and return its conjugate under time reversal
+def TR_NCTNimage(seq,depth):
 	nb_nodes = len(seq)//depth
 	new_seq = [seq[i*depth:(i+1)*depth][::-1] for i in range(nb_nodes)]
 	new_seq.sort()
 	new_seq = ''.join(new_seq)
 	return new_seq
-
-#take an ECTN under its string form and return the string obtained by exchange of the two central nodes
-def Is_12_sym(seq,depth):
-	new_seq = []
-	for i in range(1,len(seq)//depth):
-		prof = ''
-		for letter in seq[i*depth:(i+1)*depth]:
-			if letter=='1':
-				prof += '2'
-			elif letter=='2':
-				prof += '1'
-			else:
-				prof += letter
-		new_seq.append(prof)
-	return seq[:depth]+''.join(sorted(new_seq))
-
-#take an ECTN satellite profile and return its image under 1/2 symmetry
-def Swap_12_in_profile(profile):
-	prof = ''
-	for letter in profile:
-		if letter=='1':
-			prof += '2'
-		elif letter=='2':
-			prof += '1'
-		else:
-			prof += letter
-	return prof
 
 #take an ECTN under its string form and return its image under time reversal (also in string form)
 def TR_ECTNimage(seq,depth):
@@ -398,7 +376,8 @@ def Draw_ten_freq_NCTN(dic_NCTN,depth,savepath):
 	plt.close()
 
 #exchange the '1' and '2' inside the string prof
-def Swap_conv_ECTN(prof):
+#same as Swap_12_in_profile
+def swap_12_in_profile(prof):
 	res = ''
 	for letter in prof:
 		if letter=='1':
@@ -408,3 +387,10 @@ def Swap_conv_ECTN(prof):
 		else:
 			res += letter
 	return res
+
+#take an ECTN under its string form and return the string obtained by exchange of the two central nodes
+def swap_12_in_ECTN(seq,depth):
+	new_seq = []
+	for i in range(1,len(seq)//depth):
+		new_seq.append(swap_12_in_profile(seq[i*depth:(i+1)*depth]))
+	return seq[:depth]+''.join(sorted(new_seq))

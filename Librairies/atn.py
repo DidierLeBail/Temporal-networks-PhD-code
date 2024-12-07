@@ -2,13 +2,6 @@ import numpy as np
 from math import *
 import random as rd
 import networkx as nx
-#from scipy.stats import truncnorm
-
-#return a number drawn from the power law with fixed bounds and exponent -gamma (P(x)=x^{-gamma})
-def Power_law(bounds,gamma,size=1):
-	if gamma==1:
-		return bounds[0]*(bounds[1]/bounds[0])**np.random.random(size)
-	return bounds[0]*(1 + np.random.random(size)*((bounds[1]/bounds[0])**(1-gamma) - 1))**(1/(1-gamma))
 
 class Gen_ATN:
 	"""any constructor of temporal networks inherits from this class"""
@@ -580,7 +573,7 @@ class Toy_modelV3:
 		self.born = set(())
 		#bond[i][j]['weight'] = social bond from i to j
 		self.bond = nx.Graph()
-		
+
 	def Edge_to_ind(self,i,j):
 		if i>j:
 			i,j = j,i
@@ -624,7 +617,7 @@ class Toy_modelV3:
 				if self.bond.has_edge(i,j):
 					self.bond[i][j]['weight'] += self.delta
 				else:
-					self.bond.add_edge(i,j,weight=self.delta)	
+					self.bond.add_edge(i,j,weight=self.delta)
 		#record the events
 		for edge in event.edges:
 			self.events.append([t,*edge])

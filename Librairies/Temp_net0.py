@@ -3,6 +3,12 @@ import networkx as nx
 import random as rd
 from Librairies.utils import PROJECT_ROOT,Load_TN_ADM,Load_TN_Min_EW,Load_TN_min_ADM
 
+'''
+observables which depend on the TN at distinct states (n,b) are computed externally to the class
+These are:
+ - ETN autosimilarity
+ - KS test of any distr obs btw different states
+'''
 #load TN data of a given name, this TN is not a randomization of another
 def Load_TN_no_random(name):
 	if type(name)==tuple:
@@ -99,251 +105,50 @@ def Obs_to_chunks(obs):
 		return ([obj1,obj2],prop)
 	return ([],obs)
 
-#return how we should call the dataset corresponding to name in a figure or a data file
-def Get_savename(name):
-	if type(name)==tuple:
-		if type(name[-1])==str:
-			if 'randomized' in name[-1]:
-				if len(name)==2:
-					return Get_savename_no_random(name[0])+'_'+name[-1]
-				else:
-					return Get_savename_no_random(name[:-1])+'_'+name[-1]
-			return Get_savename_no_random(name)
-		return Get_savename_no_random(name)
-	return Get_savename_no_random(name)
+def All_NCTN_profiles(depth):
+	P_to_int = {}; profile = ['0']*depth
+	for num in range(1,2**depth):
+		ind = depth-1
+		while profile[ind]=='1':
+			profile[ind] = '0'
+			ind -= 1
+		profile[ind] = '1'
+		P_to_int[''.join(profile)] = num
+	return P_to_int
 
-#return how we should call the dataset corresponding to name in a figure or a data file
-#given the dataset is not a randomization of another
-def Get_savename_no_random(name):
-	if type(name)==tuple:
-		if type(name[0])==str:
-			if name[0]=='ADM':
-				savename = name[0]+str(name[1])+name[2]
-			elif name[0]=='min_EW':
-				savename = name[0]+str(name[1])
-			elif name[0]=='min_ADM' or name[0]=='min_V7':
-				savename = 'min_ADM'+str(name[1])
-		elif type(name[0])==np.ndarray:
-			savename = name[1]
-	else:
-		savename = name
-	return savename
-
-#for not randomized datasets
-def Savename_to_name_no_random(savename):
-	if savename[:7]=='min_ADM':
-		name = ('min_ADM',int(savename[7:]))
-	elif savename[:6]=='min_EW':
-		name = ('min_EW',int(savename[6:]))
-	elif savename[:3]=='ADM':
-		ind = 0; set_int = {str(i) for i in range(10)}
-		while savename[ind+3] in set_int:
-			ind += 1
-		name = ('ADM',int(savename[3:3+ind]),savename[3+ind:])
-	else:
-		name = savename
-	return name
-
-#include randomized datasets
-def Savename_to_name(savename):
-	if '_randomized' in savename:
-		ind = 0
-		while savename[ind:ind+11]!='_randomized':
-			ind += 1
-		name_no_random = Savename_to_name_no_random(savename[:ind])
-		if type(name_no_random)==tuple:
-			return name_no_random + (savename[ind+1:],)
-		return (name_no_random,savename[ind+1:])
-	return Savename_to_name_no_random(savename)
-
-def Load_TN_Min_EW(version_nb):
-	return atn.Min_EW(138,3635,0.79,**Get_versions(choice="min_EW")[version_nb]).Evolve()
-
-def Load_TN_min_ADM(version_nb):
-	version = Get_versions(choice='ADM')[7]
-	#load XP info of conf16
-	XP_info = {'N':138,'T':3635,'nb of edges':153371,'sigma':0.34,'mu':-0.56}
-	#modifies the version
-	version['m'] = 'cst'
-	version['a'] = 'cst'
-	version['c_ij'] = False
-	version['update'] = 'linear'
-	version['context'] = None
-	version['remove'] = 'node'
-	#decide of the parameters
-	dic_param = {}
-	dic_param['a'] = 0.3
-	dic_param['m'] = 1
-	if version_nb==2:
-		p_d = 0.1
-	elif version_nb==1:
-		p_d = 0.02
-	dic_param['p_d'] = p_d
-	dic_param['p_u'] = 1
-	dic_param['p_g'] = 0.08498
-	#generate the model instance
-	model = atn.ADM_class(XP_info,**version)
-	for param in model.free_param.keys():
-		model.free_param[param] = dic_param[param]
-	model.Refresh()
-	return model.Evolve()
-
-def Get_versions(choice='ADM'):
-	versions = {}
-	if choice=='ADM':
-		#version 1 = basis version
-		#versions 2 to 13 are adjacent to 1
-		#versions 14 and beyond are combinations of multiple adjacent versions
-
-		#basis version :
-		#m_{i}, a_{i}, alpha_{i}, contextual interactions are neutral, c_{i,j} used, constant egonet growth,
-		#removal of edges depending on their weight, Alpha update process
-		versions[1] = {'m':'random','a':'power','update':'alpha,i','context':'neutral','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#2nd version : linear reinforcement process and no gradual decay
-		versions[2] = {'m':'random','a':'power','update':'linear','context':'neutral','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#3rd version : random removal of nodes
-		versions[3] = {'m':'random','a':'power','update':'alpha,i','context':'neutral','c_ij':True,'egonet_growth':'cst','remove':'node'}
-
-		#4th version : varying egonet growth
-		versions[4] = {'m':'random','a':'power','update':'alpha,i','context':'neutral','c_ij':True,'egonet_growth':'var','remove':'edge'}
-
-		#5th version : c_{i,j} = 1
-		versions[5] = {'m':'random','a':'power','update':'alpha,i','context':'neutral','c_ij':False,'egonet_growth':'cst','remove':'edge'}
-
-		#6th version : intentional and contextual interactions are equivalent
-		versions[6] = {'m':'random','a':'power','update':'alpha,i','context':'equivalent','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#7th version : contextual interactions are pure noise
-		versions[7] = {'m':'random','a':'power','update':'alpha,i','context':'noise','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#8th version : no contextual interactions
-		versions[8] = {'m':'random','a':'power','update':'alpha,i','context':None,'c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#9th version : alpha
-		versions[9] = {'m':'random','a':'power','update':'alpha','context':'neutral','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#10th version : alpha_{i}, beta_{i}
-		versions[10] = {'m':'random','a':'power','update':'alpha,beta,i','context':'neutral','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#11th version : alpha_{i,j}, beta_{i,j}
-		versions[11] = {'m':'random','a':'power','update':'alpha,beta,ij','context':'neutral','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#12th version : a
-		versions[12] = {'m':'random','a':'cst','update':'alpha,i','context':'neutral','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#13th version : m
-		versions[13] = {'m':'cst','a':'power','update':'alpha,i','context':'neutral','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-
-		#14th version : ori_ADM, i.e. the following combination : versions 2+3+4+5+8+13
-		versions[14] = {'m':'cst','a':'power','update':'linear','context':None,'c_ij':False,'egonet_growth':'var','remove':'node'}
-
-		#15th version : 2+5+8+13
-		versions[15] = {'m':'cst','a':'power','update':'linear','context':None,'c_ij':False,'egonet_growth':'cst','remove':'edge'}
-
-		#16th version : 5+8+11+13
-		versions[16] = {'m':'cst','a':'power','update':'alpha,beta,ij','context':None,'c_ij':False,'egonet_growth':'cst','remove':'edge'}
-
-		#17th version : 3+5+8+9+12+13 (simplest version with exponential Hebbian process)
-		versions[17] = {'m':'cst','a':'cst','update':'alpha','context':None,'c_ij':False,'egonet_growth':'cst','remove':'node'}
-
-		#18th version : 2+3+5+8+12+13 (simplest version with linear Hebbian process)
-		versions[18] = {'m':'cst','a':'cst','update':'linear','context':None,'c_ij':False,'egonet_growth':'cst','remove':'node'}
-
-		#19th version : 7+9+13 (best expected version)
-		versions[19] = {'m':'cst','a':'power','update':'alpha','context':'noise','c_ij':True,'egonet_growth':'cst','remove':'edge'}
-		#15th version : linear reinforcement process and linear decay process
-		#16th version : transitive initialization for weights of social ties
-	elif choice=='min_EW':
-		#if shift=True and removal'=None then
-		#the number of temporal edges is O(duree**2) instead of O(duree)
-		#so the analysis is barely doable. One way to do it would be to parallelize the computation of
-		#observables by using the CPT clusters
-		#On the contrary, if shift=False and 'removal'!=None then
-		#the data set will only contain newborn activations in the stationary state
-		versions[1] = {'shift':False,'removal':None,'newborn':'random'}
-		versions[2] = {'shift':True,'removal':'node_unif','newborn':'random'}
-		versions[3] = {'shift':True,'removal':'edge_unif','newborn':'random'}
-	return versions
-
-def Load_instance_param(version_nb,name):
-	model = 'ADM_class_V'+str(version_nb)
-	set_int_param = {'m_max','m','c'}
-	dic_param = {}
-	#load parameters
-	best_param = np.loadtxt(os.path.join(ADM_DIR,model+'/'+name+'/best_param.txt'),dtype=str,delimiter=',')
-	for i,param in enumerate(best_param[0,:]):
-		if param in set_int_param:
-			dic_param[param] = int(best_param[1,i])
-		else:
-			dic_param[param] = float(best_param[1,i])
-	return dic_param
-
-def Load_XP_info(name):
-	global_info = np.loadtxt(os.path.join(ADM_DIR,name+'/global_info.txt'),dtype=str,delimiter=',')
-	XP_info = {}
-	for i in range(len(global_info[0,:])):
-		x = global_info[0,i]; y = global_info[1,i]
-		if x in {'N','T','nb of edges'}:
-			XP_info[x] = int(y)
-		else:
-			XP_info[x] = float(y)
-	return XP_info
-
-#load TN data from the ADM class
-def Load_TN_ADM(version_nb,name):
-	versions = Get_versions(choice='ADM')
-	#load instance parameters
-	dic_param = Load_instance_param(version_nb,name)
-	#load XP info
-	XP_info = Load_XP_info(name)
-	#generate the model instance
-	Model = atn.ADM_class(XP_info,**versions[version_nb])
-	for param in Model.free_param.keys():
-		Model.free_param[param] = dic_param[param]
-	Model.Refresh()
-	return Model.Evolve()
-
-#return the list of non randomized TN (savename format)
-def Get_tot_TN_not_randomized():
-	tot_TN = []
-	#list_XP
-	for i in range(16,20):
-		tot_TN.append('conf'+str(i))
-	for i in range(1,4):
-		tot_TN.append('highschool'+str(i))
-	for i in range(1,3):
-		tot_TN.append('work'+str(i))
-	tot_TN += ['utah','french','baboon','hospital','malawi']
-	#list_raha
-	tot_TN += ['ABP2pi','ABPpi4','brownD001','brownD01','brownD1','Vicsek2pi','Vicsekpi4']
-	#list_model
-	tot_TN += [('ADM',9,'conf16'),('ADM',18,'conf16'),('min_ADM',1),('min_ADM',2),('min_EW',1),('min_EW',2),('min_EW',3)]
-	return [Get_savename(name) for name in tot_TN]
-
-#return the list of empirical data sets
-def Get_tot_XPTN():
-	tot_TN = []
-	for i in range(16,20):
-		tot_TN.append('conf'+str(i))
-	for i in range(1,4):
-		tot_TN.append('highschool'+str(i))
-	for i in range(1,3):
-		tot_TN.append('work'+str(i))
-	tot_TN += ['baboon','hospital','malawi','utah','french']
-	return [Get_savename(name) for name in tot_TN]
+def All_ECTN_profiles(depth):
+	Psat_to_int = {}; profile = ['0']*depth
+	for num in range(1,4**depth):
+		ind = depth-1
+		while profile[ind]=='3':
+			profile[ind] = '0'
+			ind -= 1
+		profile[ind] = str(int(profile[ind])+1)
+		Psat_to_int[''.join(profile)] = num
+	Pcentral_to_int = {}; profile = ['0']*depth
+	for num in range(4**depth+1,4**depth+2**depth):
+		ind = depth-1
+		while profile[ind]=='1':
+			profile[ind] = '0'
+			ind -= 1
+		profile[ind] = '1'
+		Pcentral_to_int[''.join(profile)] = num
+	return Psat_to_int,Pcentral_to_int
 
 
 class Motifs_tp:
 	"""
-    input: string, path or table of ints
+	shares a lot with Temp_net but is a proper and smaller version
 	"""
 	def __init__(self,savename,where=None):
 		if where is not None:
 			self.data = np.loadtxt(where,dtype=int)
+		#measurement data
 		elif type(savename)==str:
-			self.data = Load_TN(Savename_to_name(savename))
+			try:
+				self.data = np.loadtxt(PROJECT_ROOT+'data/'+savename+'.txt',dtype=int)
+			except:
+				self.data = tp.Load_TN(Savename_to_name(savename))
 		else:
 			self.data = savename.copy()
 		#nb of nodes

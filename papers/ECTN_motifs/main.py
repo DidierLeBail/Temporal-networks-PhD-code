@@ -1,4 +1,3 @@
-#study reversibility and causality in temporal networks
 import os
 import sys
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -292,6 +291,30 @@ class Interpolate_distr_Old:
 				prod += np.prod(np.power(self.param_proba,n_vec),axis=1)
 			return np.sum(self.param_f[:,c]*self.param_omega[:,n]*prod)
 
+#if tuple_keys = (k0,k1,...,kn) then initialize to 1 the value dic[kn]...[k0]
+def Initialize_dic(dic,tuple_keys):
+	if len(tuple_keys)==1:
+		key = tuple_keys[0]
+		dic[key] = 1
+		return None
+	key = tuple_keys[-1]
+	dic[key] = {}
+	return Initialize_dic(dic[key],tuple_keys[:-1])
+
+#if tuple_keys = (k0,k1,...,kn) then increase by 1 the value dic[kn]...[k0]
+#and add the non-existing keys
+def Increase_dic(dic,tuple_keys):
+	if len(tuple_keys)==1:
+		key = tuple_keys[0]
+		if key in dic:
+			dic[key] += 1
+		else:
+			dic[key] = 1
+		return None
+	key = tuple_keys[-1]
+	if key in dic:
+		return Increase_dic(dic[key],tuple_keys[:-1])
+	return Initialize_dic(dic,tuple_keys)
 
 class Gluing_mat1d:
 	"""

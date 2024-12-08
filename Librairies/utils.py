@@ -15,7 +15,7 @@ LIST_MARKER = ['.','<','s','x','p','^','>','*','v','1','2','3','4','P']
 
 #normalize an histogram written as a dictionary of arbitrary depth:
 #for depth 2, after normalization, histo[key1][key2] = Proba(key2|key1)
-def Norm_dic_histo(histo):
+def norm_dic_histo(histo):
 	bottom_found = False; norm = 0
 	for key,val in histo.items():
 		if type(val)!=dict:
@@ -23,21 +23,21 @@ def Norm_dic_histo(histo):
 			norm += val
 	if bottom_found:
 		return {key:val/norm for key,val in histo.items()}
-	return {key:Norm_dic_histo(histo[key]) for key in histo.keys()}
+	return {key:norm_dic_histo(histo[key]) for key in histo.keys()}
 
 #if tuple_keys = (k0,k1,...,kn) then initialize to 1 the value dic[kn]...[k0]
-def Initialize_dic(dic,tuple_keys):
+def initialize_dic(dic,tuple_keys):
 	if len(tuple_keys)==1:
 		key = tuple_keys[0]
 		dic[key] = 1
 		return None
 	key = tuple_keys[-1]
 	dic[key] = {}
-	return Initialize_dic(dic[key],tuple_keys[:-1])
+	return initialize_dic(dic[key],tuple_keys[:-1])
 
 #if tuple_keys = (k0,k1,...,kn) then increase by 1 the value dic[kn]...[k0]
 #and add the non-existing keys
-def Increase_dic(dic,tuple_keys):
+def increase_dic(dic,tuple_keys):
 	if len(tuple_keys)==1:
 		key = tuple_keys[0]
 		if key in dic:
@@ -47,8 +47,8 @@ def Increase_dic(dic,tuple_keys):
 		return None
 	key = tuple_keys[-1]
 	if key in dic:
-		return Increase_dic(dic[key],tuple_keys[:-1])
-	return Initialize_dic(dic,tuple_keys)
+		return increase_dic(dic[key],tuple_keys[:-1])
+	return initialize_dic(dic,tuple_keys)
 
 
 #anything below this line should be checked

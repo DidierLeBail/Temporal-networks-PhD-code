@@ -23,10 +23,13 @@ Here you will find the code used to produce the material used in the two aforeme
 If you want a full understanding of this code, it is better first to look at the folders whose description follows.
 
 ## Librairies
-In the folder Librairies, you will find four files, of generic relevance.
+In the folder Librairies, you will find five files, of generic relevance.
 
 ### Temp_net.py
-Generic tools to manage a temporal network, like converting a table of interactions into a sequence of graphs, transforming a temporal network using time aggregation or local time shuffling and sampling some observables.
+Generic tools to manage a temporal network, like converting a table of interactions into a sequence of graphs, transforming a temporal network using time aggregation or local time shuffling.
+
+### Observables.py
+Allow to sample diverse observables from a temporal network.
 
 ### atn.py
 Acronym standing for Artificial Temporal Networks.

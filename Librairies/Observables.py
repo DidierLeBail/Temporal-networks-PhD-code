@@ -1111,24 +1111,6 @@ class Motifs_tp:
 					res[seq] = seq_prob
 		return res
 
-	#dic_profile[edge] = full profile of the edge (binary string of 0 and 1)
-	def Full_profile_edges(self):
-		dic_profile = {}
-		for t,graph in enumerate(self.TN):
-			for edge in dic_profile:
-				if not graph.has_edge(*edge):
-					dic_profile[edge] += '0'
-			for edge in graph.edges:
-				if edge[0]<edge[1]:
-					key = edge
-				else:
-					key = edge[::-1]
-				if key in dic_profile:
-					dic_profile[key] += '1'
-				else:
-					dic_profile[key] = '0'*t+'1'
-		return dic_profile
-
 	#compute the histo for edge activity profiles (empty profile excluded or included)
 	def Edge_act_prof_histo(self,depth,empty=False):
 		res = {}
@@ -1178,7 +1160,223 @@ class Motifs_tp:
 					cc_histo[n] = 1
 		return cc_histo
 
+"""
+obj_train is a list of time series. Each series is associated to the spatial part
+of a given object in a temporal graph, and the values of the series give
+the times of activity of this object.
+Example: if an element of node_train is [1,23,24], this means that one node
+has been active at times 1, 23 and 24 only.
+For NCTN or ECTN, the definition is different (because otherwise makes no sense
+for obs like the duration e.g.):
+If an element of NCTN_train is [1,23,24], this means that their is one NCTN
+(of given sequence) that is active in the temporal graph at times 1, 23 and 24 only.
+However, these inclusions can share distinct spatial parts.
 
+obj_to_space_weight is an integer-valued time series, where
+obj_to_space_weight[t] = nb of inclusions of obj in the temporal graph at time t
+For example:
+node_to_space_weight[t] = nb of nodes active at t
+NCTN_to_space_weight[t] = nb of NCTN active at t
+
+obj_to_time_weight is a dictionary such that:
+node_to_time_weight[i] = nb of activation times of the node i
+NCTN_to_time_weight[seq] = nb of activation times of the NCTN seq
+"""
+
+#values is produced e.g. via dic.values() and should contain integers
+#returns histo, where histo[val] = nb of occurrences of val in values
+def sample_values(values):
+	histo = {}
+	for val in values:
+		increase_dic(histo,(val,))
+	return histo
+
+#TN is a temporal graph viewed as a list of graphs
+def get_node_to_space_weight(TN):
+	return [len(G.nodes()) for G in TN]
+
+#TN is a temporal graph viewed as a list of graphs
+def get_edge_to_space_weight(TN):
+	return [len(G.edges()) for G in TN]
+
+#TN is a temporal graph viewed as a list of graphs
+def get_NCTN_to_space_weight(TN,depth):
+	res = []
+	pass
+	return res
+
+#TN is a temporal graph viewed as a list of graphs
+def get_ECTN_to_space_weight(TN,depth):
+	res = []
+	pass
+	return res
+
+#returns an integer-valued histogram (called histo)
+#the input is obj_train or obj_to_time_weight; if obj==edge:
+#histo[w] = nb of edges that have been active at exactly w time steps
+#2 edges differ by their spatial part
+#if obj==NCTN:
+#histo[w] = nb of NCTN that have been active at exactly w time steps
+#2 NCTN differ by their string sequence
+def time_weight(obj_train=None,obj_to_time_weight=None):
+	if obj_to_time_weight is not None:
+		return sample_values(obj_to_time_weight.values())
+	pass
+
+#compute the unnormalized histogram of the duration
+#from obj_train
+def duration(obj_train):
+	for val in obj_train:
+		for el in val:
+			increase_dic(histo,(el[1]-el[0]+1,))
+	return histo
+
+#compute the unnormalized histogram of the newborn duration
+#from obj_train
+def newborn_duration(obj_train):
+	histo = {}
+	for val in obj_train:
+		el = val[0]
+		increase_dic(histo,(el[1]-el[0]+1,))
+	return histo
+
+#compute the unnormalized histogram of the interduration
+#from obj_train
+def interduration(obj_train):
+	histo = {}
+	for val in obj_train:
+		for n in range(1,len(val)):
+			increase_dic(histo,(val[n][0]-val[n-1][1]-1,))
+	return histo
+
+#compute the unnormalized histogram of the weak (delayed) event duration
+#from obj_train
+def weak_event_duration(obj_train,delay=4):
+	histo = {}
+	for val in obj_train:
+		if len(val)==1:
+			increase_dic(histo,(1,))
+		else:
+			#nb of consecutive events
+			nb = 1
+			for n in range(1,len(val)):
+				interduration = val[n][0]-val[n-1][1]-1
+				if interduration<delay:
+					nb += 1
+				else:
+					increase_dic(histo,(nb,))
+					nb = 1
+	return histo
+
+#compute the distribution of the size of connected components
+#of the interaction graph TN (list of graphs)
+def cc_size(TN):
+	histo = {}
+	for G in TN:
+		for cc in nx.connected_components(G):
+			increase_dic(histo,(len(cc),))
+	return histo
+
+def nb_tot(obj_to_time_weight):
+	return sum(list(obj_to_time_weight.values()))
+def nb_diff(obj_to_time_weight):
+	return len(obj_to_time_weight)
+
+
+#return node_train
+#node_train[ind][k] = (t_0,t_f) with t_0 = starting time of the k^th event for node of identifier ind
+#and t_f = ending time
+def get_node_train(TN):
+	node_event = {}
+	active_nodes = set(TN[0].nodes())
+	node_starting_time = {i:0 for i in active_nodes}
+	for t in range(1,len(TN)):
+		current_nodes = set(TN[t].nodes())
+		#nodes active at t and not at t-1
+		new_nodes = current_nodes.difference(active_nodes)
+		#nodes active at t-1 and not at t
+		finished_nodes = active_nodes.difference(current_nodes)
+		for ind in finished_nodes:
+			if ind in node_event:
+				node_event[ind].append((node_starting_time[ind],t-1))
+			else:
+				node_event[ind] = [(node_starting_time[ind],t-1)]
+			del node_starting_time[ind]
+		for ind in new_nodes:
+			node_starting_time[ind] = t
+		#update the set of active nodes
+		active_nodes = current_nodes
+	#take care of the last timestamp
+	for ind in active_nodes:
+		if ind in node_event:
+			node_event[ind].append((node_starting_time[ind],len(TN)-1))
+		else:
+			node_event[ind] = [(node_starting_time[ind],len(TN)-1)]
+	return list(node_event.values())
+
+#return edge_train
+#edge_event[ind][k] = (t_0,t_f) with t_0 = starting time of the k^th event for edge of identifier ind
+#and t_f = ending time
+def get_edge_train(TN):
+	edge_event = {}
+	#edge_starting_time[ind] = last starting time of the activation of the edge of identifier ind
+	edge_starting_time = {}
+	#active_edges = set of edges active at current time
+	active_edges = set(())
+	for edge in TN[0].edges():
+		if edge[0]<edge[1]:
+			ind = edge
+		else:
+			ind = edge[::-1]
+		active_edges.add(ind)
+		edge_starting_time[ind] = 0
+	for t in range(1,len(TN)):
+		#edges active at t
+		current_edges = set(())
+		for edge in TN[t].edges():
+			if edge[0]<edge[1]:
+				ind = edge
+			else:
+				ind = edge[::-1]
+			current_edges.add(ind)
+		#edges active at t and not at t-1
+		new_edges = current_edges.difference(active_edges)
+		#edges active at t-1 and not at t
+		finished_edges = active_edges.difference(current_edges)
+		for ind in finished_edges:
+			if ind in edge_event:
+				edge_event[ind].append((edge_starting_time[ind],t-1))
+			else:
+				edge_event[ind] = [(edge_starting_time[ind],t-1)]
+			del edge_starting_time[ind]
+		for ind in new_edges:
+			edge_starting_time[ind] = t
+		#update the set of active edges
+		active_edges = current_edges
+	#take care of the last timestamp
+	for ind in active_edges:
+		if ind in edge_event:
+			edge_event[ind].append((edge_starting_time[ind],len(TN)-1))
+		else:
+			edge_event[ind] = [(edge_starting_time[ind],len(TN)-1)]
+	return list(edge_event.values())
+
+def get_NCTN_train(TN,depth):
+	pass
+def get_ECTN_train(TN,depth):
+	pass
+
+
+#return the unnormalized histogram for instantaneous node degree
+#where the degree zero is excluded
+def node_deg(TN):
+	histo = {}
+	for G in TN:
+		for i in G.nodes:
+			increase_dic(histo,(G.degree(i),))
+	return histo
+
+###############################################################################
 
 class Temp_net:
 	"""
@@ -1222,47 +1420,6 @@ class Temp_net:
 		#number of nodes
 		#number of timestamps
 		self.info = {}
-
-	#replace self.data by its formatted version, i.e. time begins at 0, two consecutive times
-	#are separated by one and nodes are numeroted from 0 to nb of nodes-1
-	#and self-loops are removed
-	def Format(self,duration=np.inf):
-		self.Get_data_time()
-		first_line = max(0,len(self.data_time)-duration)
-		self.data = self.data[self.data_time[first_line][1]:,:]
-		#remove any self-loop
-		valid_lines = []
-		for n in range(np.size(self.data,0)):
-			if self.data[n,1]!=self.data[n,2]:
-				valid_lines.append(n)
-		self.data = self.data[valid_lines,:]
-		#recompute data_time
-		self.Get_data_time()
-		#relabel the nodes
-		node_to_int = {}; num = 0
-		for n in range(np.size(self.data,0)):
-			for k in self.data[n,1:]:
-				if not k in node_to_int:
-					node_to_int[k] = num
-					num += 1
-		for t,el in enumerate(self.data_time):
-			self.data[el[1]:el[2],0] = t
-		for n in range(np.size(self.data,0)):
-			for k in range(1,3):
-				self.data[n,k] = node_to_int[self.data[n,k]]
-
-	#compute self.data_time
-	def Get_data_time(self):
-		self.data_time = []
-		n1 = 0; n_max = np.size(self.data,0)
-		for n in range(1,n_max):
-			t = self.data[n-1,0]
-			if self.data[n,0]>t:
-				self.data_time += [[t,n1,n]]
-				n1 = n
-		#take care of the last line of data
-		t = self.data[-1,0]
-		self.data_time += [[t,n1,n_max]]
 
 	#extract the profile histo with given depth from the events train of obj
 	def Profile_from_events(self,key_mem):
@@ -1310,41 +1467,6 @@ class Temp_net:
 		elif obj=='ECTN':
 			return self.Profile_from_ECTN(depth)
 
-	#compute the total nb of ETN
-	def Get_nb_tot(self,obj):
-		return sum(list(self.memory[obj]['time_weight'].values()))
-
-	#compute the nb of different ETN
-	def Get_nb_diff(self,obj):
-		return len(self.memory[obj]['time_weight'])
-
-	def Clear_memory(self):
-		for key1,val in self.memory.items():
-			for key2 in val.keys():
-				self.memory[key1][key2] = {}
-
-	#returns the histo of the total nb of nodes active at the same time
-	def Get_node_space_weight(self):
-		histo = {}
-		for val in self.TN.values():
-			n = len(val.nodes)
-			if n in histo:
-				histo[n] += 1
-			else:
-				histo[n] = 1
-		return histo
-
-	#returns the histo of the total nb of edges active at the same time
-	def Get_edge_space_weight(self):
-		histo = {}
-		for val in self.TN.values():
-			n = len(val.edges)
-			if n in histo:
-				histo[n] += 1
-			else:
-				histo[n] = 1
-		return histo
-
 	def Get_obs(self,obs,arg):
 		#break the observable into meaningful chunks: the first chunk gives the object to compute
 		#and the second tells how to compute the observable using this object
@@ -1385,12 +1507,6 @@ class Temp_net:
 	def Get_val_avg_cc(self):
 		return np.mean([len(list(nx.connected_components(G))) for G in self.TN.values()])
 
-	def Get_entropy(self,obj):
-		list_proba = np.asarray(list(self.memory[obj]['time_weight'].values()),dtype=float)
-		norm = np.sum(list_proba)
-		list_proba = list_proba/norm
-		return np.sum(-list_proba*np.log10(list_proba))
-
 	#return the error made on ETN proba by assuming independence of activity profiles
 	#as well as independence btw nb of satellites and activity profiles
 	def Get_motif_error(self,key_mem):
@@ -1400,26 +1516,6 @@ class Temp_net:
 		elif obj=='ECTN':
 			abundancy,list_proba = self.ECTN_xpth_probas(depth)
 		return np.sqrt(np.sum((abundancy-list_proba)**2)/len(list_proba))
-
-	def Get_cum_edge_weight_single(self,cum):
-		nb_blocks = len(self.TN)//cum
-		#histo[w] = nb of occurrences such that an edge is active w times on a time interval of length cum
-		histo = {}
-		for t in range(nb_blocks):
-			cum_net = nx.Graph()
-			for tau in range(t*cum,(t+1)*cum):
-				for edge in self.TN[tau].edges:
-					if cum_net.has_edge(*edge):
-						cum_net[edge[0]][edge[1]]['weight'] += 1
-					else:
-						cum_net.add_edge(*edge,weight=1)
-			for edge in cum_net.edges:
-				w = cum_net[edge[0]][edge[1]]['weight']
-				if w in histo:
-					histo[w] += 1
-				else:
-					histo[w] = 1
-		return histo
 
 	def NCTN_histo_sat(self,depth):
 		histo_sat = {}
@@ -1441,223 +1537,9 @@ class Temp_net:
 				histo_sat[nb_sat] = nb
 		return histo_sat
 
-	#sliding time shuffling (STS) with range b
-	#followed by sliding time aggregation of level agg
-	#modifies self.TN as well as self.data_time but data is preserved
-	def Sliding_transfo(self,b,agg):
-		#compute self.data_time
-		self.Get_data_time()
-		nb_time = len(self.data_time)
-		#sliding time shuffling
-		list_times = list(range(nb_time))
-		for k in range(nb_time-b+1):
-			list_times[k:k+b] = rd.sample(list_times[k:k+b],b)
-		new_data_time = [[list_times[el[0]],*el[1:]] for el in self.data_time]
-		self.data_time = sorted(new_data_time,key=lambda el:el[0])
-		#sliding time aggregation
-		new_nb = nb_time-agg+1
-		#self.TN[t] = aggregated graph of interactions on t^th time interval
-		self.TN = {t:nx.Graph() for t in range(new_nb)}
-		#initial graph
-		G = nx.Graph()
-		for k in range(agg):
-			for n in range(*self.data_time[k][1:]):
-				i,j = self.data[n,1:]
-				if G.has_edge(i,j):
-					G[i][j]['weight'] += 1
-				else:
-					G.add_edge(i,j,weight=1)
-		for t in range(new_nb-1):
-			self.TN[t].add_edges_from(G.edges)
-			#remove edges from time t
-			for n in range(*self.data_time[t][1:]):
-				i,j = self.data[n,1:]
-				if G[i][j]['weight']==1:
-					G.remove_edge(i,j)
-				else:
-					G[i][j]['weight'] -= 1
-			#add edges from time t+agg
-			for n in range(*self.data_time[t+agg][1:]):
-				i,j = self.data[n,1:]
-				if G.has_edge(i,j):
-					G[i][j]['weight'] += 1
-				else:
-					G.add_edge(i,j,weight=1)
-		self.TN[new_nb-1].add_edges_from(G.edges)
-		self.info['T'] = new_nb
-
-	#local time shuffling (TS) of self.TN with time window b
-	#modifies self.TN as well as self.data_time but data is preserved
-	def Local_TS(self,b,agg=1):
-		#compute self.data_time
-		self.Get_data_time()
-		#compute the new self.data_time and deduce self.TN at agg level 1
-		#determine the times permutation
-		list_times = []; nb_blocks = len(self.data_time)//b
-		for k in range(nb_blocks):
-			list_times += rd.sample(range(k*b,(k+1)*b),b)
-		last_block = len(self.data_time)-b*nb_blocks
-		if last_block>0:
-			list_times += rd.sample(range(b*nb_blocks,len(self.data_time)),last_block)
-		new_data_time = [[list_times[el[0]],*el[1:]] for el in self.data_time]
-		self.data_time = sorted(new_data_time,key=lambda el:el[0])
-		self.Get_TN(agg)
-
-	#minimum intialization to get the temporal network at aggregation level agg
-	def Init(self,agg=None):
-		self.Get_data_time()
-		self.info['N'] = len(set(self.data[:,1]).union(set(self.data[:,2])))
-		if type(agg)==int:
-			self.Get_TN(agg)
-
-	#return the cumulated interaction graph at level cum
-	def Get_cum_TN(self,cum):
-		#split the timeline into blocks of size cum
-		new_nb = len(self.TN)//cum
-		cum_TN = {t:nx.Graph() for t in range(new_nb)}
-		for t in range(new_nb):
-			for k in range(cum):
-				n1,n2 = self.data_time[t*cum+k][1:]
-				for n in range(n1,n2):
-					i,j = self.data[n,1:]
-					if cum_TN[t].has_edge(i,j):
-						cum_TN[t][i][j]['weight'] += 1
-					else:
-						cum_TN[t].add_edge(i,j,weight=1)
-		return cum_TN
-
-	#compute the interaction graph at aggregation level agg
-	def Get_TN(self,agg):
-		new_nb = len(self.data_time)//agg
-		#self.TN[t] = aggregated graph of interactions on t^th time interval
-		self.TN = {t:nx.Graph() for t in range(new_nb)}
-		for t in range(new_nb):
-			for k in range(agg):
-				n1,n2 = self.data_time[t*agg+k][1:]
-				for n in range(n1,n2):
-					self.TN[t].add_edge(*self.data[n,1:])
-		#take care of the last aggregation window
-		if new_nb*agg<len(self.data_time):
-			self.TN[new_nb] = nx.Graph()
-			for k in range(len(self.data_time)-agg*new_nb):
-				n1,n2 = self.data_time[agg*new_nb+k][1:]
-				for n in range(n1,n2):
-					self.TN[new_nb].add_edge(*self.data[n,1:])
-		self.info['T'] = len(self.TN)
-
-	def Edge_to_ind(self,i,j):
-		if i>j:
-			i,j = j,i
-		return i*(2*self.info['N']-i-1)//2 + j-i-1
-
-	#assumes self.Get_TN has been run
-	#compute the histogram for instantaneous node degree
-	def Get_inst_deg(self):
-		histo = {}
-		for val in self.TN.values():
-			#count the nb of nodes with degree zero (these are the inactive nodes)
-			nb = self.info['N']-len(val.nodes)
-			if nb:
-				histo[0] = nb
-			for i in val.nodes:
-				deg = val.degree(i)
-				if deg in histo:
-					histo[deg] += 1
-				else:
-					histo[deg] = 1
-		return histo
-
-	#compute the train of events for nodes
-	def Node_event_train(self):
-		node_event = {}
-		active_nodes = set(self.TN[0].nodes)
-		node_starting_time = {i:0 for i in active_nodes}
-		for t in range(1,len(self.TN)):
-			current_nodes = set(self.TN[t].nodes)
-			#edges active at t and not at t-1
-			new_nodes = current_nodes.difference(active_nodes)
-			#edges active at t-1 and not at t
-			finished_nodes = active_nodes.difference(current_nodes)
-			for ind in finished_nodes:
-				if ind in node_event:
-					node_event[ind].append((node_starting_time[ind],t-1))
-				else:
-					node_event[ind] = [(node_starting_time[ind],t-1)]
-				del node_starting_time[ind]
-			for ind in new_nodes:
-				node_starting_time[ind] = t
-			#update the set of active nodes
-			active_nodes = current_nodes
-		for ind in active_nodes:
-			if ind in node_event:
-				node_event[ind].append((node_starting_time[ind],self.info['T']-1))
-			else:
-				node_event[ind] = [(node_starting_time[ind],self.info['T']-1)]
-		return node_event
-
-	#compute the train of events for edges
-	#edge_event[ind][k] = (t_0,t_f) with t_0 = starting time of the k^th event for edge of identifier ind
-	#and t_f = ending time
-	def Edge_event_train(self):
-		edge_event = {}
-		#edge_starting_time[ind] = last starting time of the activation of the edge of identifier ind
-		edge_starting_time = {}
-		#active_edges = set of edges active at current time
-		active_edges = set(())
-		for edge in self.TN[0].edges:
-			if edge[0]<edge[1]:
-				ind = edge
-			else:
-				ind = edge[::-1]
-			active_edges.add(ind)
-			edge_starting_time[ind] = 0
-		for t in range(1,len(self.TN)):
-			#edges active at t
-			current_edges = set(())
-			for edge in self.TN[t].edges:
-				if edge[0]<edge[1]:
-					ind = edge
-				else:
-					ind = edge[::-1]
-				current_edges.add(ind)
-			#edges active at t and not at t-1
-			new_edges = current_edges.difference(active_edges)
-			#edges active at t-1 and not at t
-			finished_edges = active_edges.difference(current_edges)
-			for ind in finished_edges:
-				if ind in edge_event:
-					edge_event[ind].append((edge_starting_time[ind],t-1))
-				else:
-					edge_event[ind] = [(edge_starting_time[ind],t-1)]
-				del edge_starting_time[ind]
-			for ind in new_edges:
-				edge_starting_time[ind] = t
-			#update the set of active edges
-			active_edges = current_edges
-		#take care of the last timestamp
-		for ind in active_edges:
-			if ind in edge_event:
-				edge_event[ind].append((edge_starting_time[ind],self.info['T']-1))
-			else:
-				edge_event[ind] = [(edge_starting_time[ind],self.info['T']-1)]
-		return edge_event
-
 	#compute the observables of evaluation
 	def Evaluation_obs(self):
 		self.eval_obs['vector']['ETN3'] = self.ETN_vector(5,3)[0]
-
-	#compute the distribution of the size of connected components of the interaction graph
-	def Get_cc_size(self):
-		cc_histo = {}
-		for G in self.TN.values():
-			list_cc = nx.connected_components(G)
-			for cc in list_cc:
-				n = len(cc)
-				if n in cc_histo:
-					cc_histo[n] += 1
-				else:
-					cc_histo[n] = 1
-		return cc_histo
 
 	#compute the train of events for EdgeTN
 	def EdgeTN_event_train(self,depth):

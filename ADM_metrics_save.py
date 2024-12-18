@@ -80,25 +80,12 @@ def distribution_distance(obs1,obs2):
 	T = (T1+T2)/2
 	return (np.sum(T1*np.log2(T1/T+1e-12)) + np.sum(T2*np.log2(T2/T+1e-12)))/2
 
-#GLOBAL VARIABLES
-####################################################################################################################################
-
-#define the observables that will be sampled: these are the reference observables
-TYPE_TO_OBS = {'point':['clustering_coeff','deg_assortativity'],'vector':['ETN3']}
-TYPE_TO_OBS['distribution'] = ['cc_size']
-TYPE_TO_OBS['distribution'] += ['edge_activity','edge_events_activity','edge_newborn_activity','node_activity']
-TYPE_TO_OBS['distribution'] += ['edge_interactivity','node_interactivity']
-TYPE_TO_OBS['distribution'] += ['edge_weight','ETN2_weight','ETN3_weight']
-OBS_TO_TYPE = {}
-for type_obs,val in TYPE_TO_OBS.items():
-	for name_obs in val:
-		OBS_TO_TYPE[name_obs] = type_obs
-
 SAVE_OBS = {'point':Save_point,'distribution':Save_distribution,'vector':Save_vector}
 LOAD_OBS = {'point':Load_point,'distribution':Load_distribution,'vector':Load_vector}
 DISTANCE_OBS = {'point':point_distance,'distribution':distribution_distance,'vector':vector_distance}
 
 ####################################################################################################################################
+
 
 
 
@@ -200,13 +187,11 @@ def Get_autosim(path):
 		res[n] = Cosim(dic_ETN[n],dic_ETN[1])
 	return res
 
-class Distance_tensor:
+class Proximity_tensor:
 	"""
-	list_models = list of couples (string,boolean)
-	the first element is the savename of the models we want to compare
-	the second element is True if the model is tuned (different parameters for each reference) and False else
+	docstring for Proximity_tensor
 	"""
-	def __init__(self,list_models,list_refs):
+	def __init__(self,n2=19,instance_path='tuned'):
 		#decide wether the instances have been tuned or are random
 		self.instance_path = instance_path+'/'
 		#model with the lowest global rank
@@ -376,6 +361,35 @@ class Distance_tensor:
 		self.mean_worst_model = max(models,key=lambda name:self.mean_glob_rank[self.name_to_int[name]])
 		self.sim_worst_model = max(models,key=lambda name:self.sim_glob_rank[self.name_to_int[name]])
 
+	def Load_data_reg_fitness_score(self,n2,option='mean',list_obs='all'):
+		if option=='mean':
+			func = np.mean
+		elif option=='median':
+			func = np.median
+		avg_fitness = np.zeros(n2) #n_samples = n2
+		for i in range(1,n2+1):
+			model = 'ADM_class_V'+str(i); tab = []
+			for name in XP_data:
+				best_fit = np.loadtxt('analysis/'+model+'/'+name+'/best_fit.txt')[-1]
+				tab.append(best_fit)
+			avg_fitness[i-1] = func(tab)
+		#n_features = n_obs
+		if list_obs=='all':
+			newt_to_t = range(self.nb_obs)
+			X = np.zeros((n2,self.nb_obs))
+			for i in range(1,n2+1):
+				i_mod = self.name_to_int['ADM_class_V'+str(i)]
+				X[i-1,:] = self.score[:,i_mod]
+		else:
+			X = np.zeros((n2,len(list_obs))); new_t = 0; newt_to_t = []
+			for obs in list_obs:
+				t = self.obs_to_int[obs]; newt_to_t.append(t)
+				for i in range(1,n2+1):
+					i_mod = self.name_to_int['ADM_class_V'+str(i)]
+					X[i-1,new_t] = self.score[t,i_mod]
+				new_t += 1
+		return avg_fitness,X,newt_to_t
+
 	#compute the ranking Kendall similarity matrix btw observables
 	#convert this matrix into a weighted network and save it in gephi format
 	#only versions 1 to 13 are taken into account because we are interested in trade-offs within
@@ -402,6 +416,209 @@ class Distance_tensor:
 					if weight>0:
 						network.add_edge(obs1,obs2,weight=weight)
 			nx.write_gexf(network,'analysis/sim_obs.gexf')
+
+	#visualize the similarity matrix btw observables and save the figure
+	def Visu_sim_obs(self,dic_group):
+		grouped_obs = []; list_color = []
+		for info,group in dic_group.items():
+			grouped_obs += group
+			list_color += [info[0]]*len(group)
+		new_mat = np.eye(self.nb_obs)
+		for i,obs1 in enumerate(grouped_obs):
+			i_obs = self.obs_to_int[obs1]
+			for j,obs2 in enumerate(grouped_obs):
+				j_obs = self.obs_to_int[obs2]
+				new_mat[i,j] = self.sim_obs[i_obs,j_obs]
+		fig,ax = plt.subplots(1,1,constrained_layout=True)
+		fontsize = 12
+		labels = grouped_obs
+		ax.set_xticks(range(self.nb_obs))
+		ax.set_yticks(range(self.nb_obs))
+		ax.set_xticklabels(labels,rotation=90,fontsize=fontsize)
+		ax.set_yticklabels(labels,fontsize=fontsize)
+		for xtick,color,ytick in zip(ax.get_xticklabels(),list_color,ax.get_yticklabels()):
+			xtick.set_color(color)
+			ytick.set_color(color)
+		im = ax.imshow(new_mat,cmap='gnuplot2')
+		plt.colorbar(im)
+		plt.savefig('figures/simat_obs.png')
+
+	#draw the figure for the aps paper
+	#showing the agreement between qualitative appreciation of the distributions
+	#and the score computation
+	#for each chosen observable, we display the distributions of the worst, average and best datasets,
+	#as well as their scores
+	def Verif_score(self,chosen_obs,option='mean'):
+		if option=='mean':
+			best_model = self.mean_best_model
+			glob_rank = self.mean_glob_rank
+		else:
+			best_model = self.sim_best_model
+			glob_rank = self.sim_glob_rank
+		#we associate one color and one marker to one dataset
+		line_dic = {}; list_marker = ['.','x','*','v','s']
+		list_color = ['b','k','g','r','orange']
+		chosen_XP = ['conf16','utah']
+		#we choose the best and worst model according to self.sim_glob_rank, as well as the original ADM
+		chosen_model = [best_model,'ADM_class_V14']
+		worst_model = max(['ADM_class_V'+str(i) for i in range(1,self.nb_mod+1)],key=lambda name:glob_rank[self.name_to_int[name]])
+		chosen_model.append(worst_model)
+		model_to_label = {'ADM_class_V'+str(i):'V'+str(i) for i in range(1,self.nb_mod+1)}
+		for name in chosen_XP:
+			model_to_label[name] = name
+		#we choose the realisation of the model closest to the conferences
+		dic_anapath = {name:'analysis/'+name for name in chosen_XP}
+		for model in chosen_model:
+			dic_anapath[model] = 'analysis/'+model+'/conf16'
+		tot_chosen = chosen_XP+chosen_model
+		for color,marker,name in zip(list_color,list_marker,tot_chosen):
+			line_dic[name] = [color,marker]
+		fontsize = 16
+		for obs in chosen_obs:
+			t = self.obs_to_int[obs]
+			fig,ax = plt.subplots(1,2,constrained_layout=True,gridspec_kw={'width_ratios': [1,3]})
+			#compute and display the scores
+			for name,val in line_dic.items():
+				score = self.score[t,self.name_to_int[name]]
+				ax[0].scatter([0],[score],c=val[0],marker=val[1])
+			ax[0].set_title("score",fontsize=fontsize)
+			ax[0].tick_params(axis='x',which='both',bottom=False,top=False,labelbottom=False)
+			for label in ax[0].get_yticklabels():
+				label.set_fontsize(fontsize)
+			#display the distributions
+			for name,val in line_dic.items():
+				data = Load_distribution(dic_anapath[name],obs)
+				ax[1].plot(*Raw_to_binned(data),val[1],color=val[0],label=model_to_label[name])
+			ax[1].set_title(obs,fontsize=fontsize)
+			ax[1].set_xlabel(self.obs_to_xlabel[obs],fontsize=fontsize)
+			ax[1].set_ylabel(r"$\log_{10}(P)$",fontsize=fontsize)
+			ax[1].legend(fontsize=fontsize)
+			for label in ax[1].get_xticklabels()+ax[1].get_yticklabels():
+				label.set_fontsize(fontsize)
+			fig.savefig('figures/score/verif_score/random_obs/verif_'+obs+'_'+option+'.png')
+		plt.close('all')
+
+	def Verif_autosim(self,option='mean'):
+		if option=='mean':
+			best_model = self.mean_best_model
+			glob_rank = self.mean_glob_rank
+		else:
+			best_model = self.sim_best_model
+			glob_rank = self.sim_glob_rank
+		#we associate one color and one marker to one dataset
+		line_dic = {}; list_marker = ['.','x','*','v','s']
+		list_color = ['b','k','g','r','orange']
+		chosen_XP = ['conf16','utah']
+		#we choose the best and worst model according to self.sim_glob_rank, as well as the original ADM
+		chosen_model = [best_model,'ADM_class_V14']
+		worst_model = max(['ADM_class_V'+str(i) for i in range(1,self.nb_mod+1)],key=lambda name:glob_rank[self.name_to_int[name]])
+		model_to_label = {'ADM_class_V'+str(i):'V'+str(i) for i in range(1,self.nb_mod+1)}
+		chosen_model.append(worst_model)
+		for name in chosen_XP:
+			model_to_label[name] = name
+		#we choose the realisation of the model closest to the utah, because the utah is highly autosimilar
+		dic_anapath = {name:'analysis/'+name for name in chosen_XP}
+		for model in chosen_model:
+			dic_anapath[model] = 'analysis/'+model+'/utah'
+		tot_chosen = chosen_XP+chosen_model
+		for color,marker,name in zip(list_color,list_marker,tot_chosen):
+			line_dic[name] = [color,marker]
+		fontsize = 16
+		#load data
+		dic_data = {}
+		for name,path in dic_anapath.items():
+			dic_data[name] = Get_autosim(path)
+		#plot the figure
+		fig,ax = plt.subplots(1,2,constrained_layout=True,gridspec_kw={'width_ratios': [1,3]})
+		#compute and display the scores
+		t = self.obs_to_int['ETN3']
+		for name,val in line_dic.items():
+			score = self.score[t,self.name_to_int[name]]
+			ax[0].scatter([0],[score],c=val[0],marker=val[1])
+		ax[0].set_title("score",fontsize=fontsize)
+		ax[0].tick_params(axis='x',which='both',bottom=False,top=False,labelbottom=False)
+		for label in ax[0].get_yticklabels():
+			label.set_fontsize(fontsize)
+		#display the autosim
+		for name,val in line_dic.items():
+			ax[1].plot(*zip(*dic_data[name].items()),val[1],color=val[0],label=model_to_label[name])
+		ax[1].set_title('autosimilarity for ETN of depth 3',fontsize=fontsize)
+		ax[1].set_xlabel('aggregation level',fontsize=fontsize)
+		ax[1].set_ylabel("cosine similarity",fontsize=fontsize)
+		ax[1].legend(fontsize=fontsize)
+		for label in ax[1].get_xticklabels()+ax[1].get_yticklabels():
+			label.set_fontsize(fontsize)
+		fig.savefig('figures/score/verif_score/ETN_obs/verif_autosim_'+option+'.png')
+		plt.close('all')
+
+	#For each point observable, we plot the score as a function of the observable value.
+	#We also indicate as orange vertical lines the values observed in the five empirical references.
+	def Verif_point_score(self,list_models,option='median'):
+		if option=='median':
+			func = np.median
+		elif option=='averaged':
+			func = np.mean
+		fontsize = 16
+		#gather data
+		for obs in type_to_obs['point']:
+			fig,ax = plt.subplots(1,1,constrained_layout=True)
+			ax.set_xlabel(option+' '+obs,fontsize=fontsize)
+			ax.set_ylabel('model score',fontsize=fontsize)
+			#load model data
+			X = []; Y = []
+			for nb in range(1,self.nb_mod+1):
+				model = 'ADM_class_V'+str(nb)
+				Y.append(self.score[self.obs_to_int[obs],self.name_to_int[model]])
+				X.append(func([Load_point('analysis/'+model+'/'+name,obs) for name in XP_data]))
+			ax.plot(X,Y,'.',label='models')
+			#make the models in list_models visible
+			for i in list_models:
+				x = X[i-1]; y = Y[i-1]
+				ax.scatter(x,y,c='r')
+				ax.annotate('V'+str(i),(x,y),xytext=(x,y))
+			#load XP data
+			m = np.min(Y); M = np.max(Y)
+			for name in XP_data[1:]:
+				x = Load_point('analysis/'+name,obs)
+				ax.plot([x,x],[m,M],'--',color='orange')
+			x = Load_point('analysis/'+XP_data[0],obs)
+			ax.plot([x,x],[m,M],'--',color='orange',label='references')
+			ax.legend(fontsize=fontsize)
+			for label in ax.get_xticklabels()+ax.get_yticklabels():
+				label.set_fontsize(fontsize)
+			plt.savefig('figures/score/verif_score/point_obs/verif_'+obs+'_'+option+'.png')
+
+	#display the 5 most frequent motifs at aggregation level 1
+	#of the 'ref' data set and the best and worst adjacent versions wrt the chosen option
+	def Verif_vector_score(self,ref,option='mean',agg_level=1):
+		if option=='mean':
+			best_model = self.mean_best_model
+			worst_model = max(['ADM_class_V'+str(i) for i in range(1,self.nb_mod+1)],key=lambda name:self.mean_glob_rank[self.name_to_int[name]])
+		elif option=='sim':
+			best_model = self.sim_best_model
+			worst_model = max(['ADM_class_V'+str(i) for i in range(1,self.nb_mod+1)],key=lambda name:self.sim_glob_rank[self.name_to_int[name]])
+		#load data
+		dic = {ref:[],best_model:[],worst_model:[]}
+		vector = Load_vector('analysis/'+ref,'ETN3',agg_max=agg_level)[agg_level]
+		dic[ref] = sorted(vector.keys(),key=lambda seq:vector[seq],reverse=True)[:5]
+		for model in [worst_model,best_model]:
+			vector = Load_vector('analysis/'+model+'/'+ref,'ETN3',agg_max=agg_level)[agg_level]
+			dic[model] = sorted(vector.keys(),key=lambda seq:vector[seq],reverse=True)[:5]
+		#plot motifs
+		fontsize = 18
+		for name,val in dic.items():
+			fig,ax = plt.subplots(1,5,figsize=(12,3),constrained_layout=True)
+			for k in range(5):
+				ax[k].set_axis_off()
+				ax[k].set_title(Ordinal(k),fontsize=fontsize)
+				Plot_motif(val[k],3,ax[k])
+			if name==ref:
+				name_fig = 'ref'
+			elif name==best_model:
+				name_fig = 'best'
+			else:
+				name_fig = 'worst'
+			plt.savefig('figures/score/verif_score/ETN_obs/verif_ETN3_'+name_fig+'_'+option+'_level'+str(agg_level)+'.png')
 
 	#for each ADM version, compute the difference btw its score and the score of the basis version
 	#ADM_class_V1 for each observable
@@ -466,86 +683,246 @@ class Distance_tensor:
 		plt.savefig('figures/score/variation_per_obs_'+str(n2)+'.png')
 		plt.close()
 
-	#compute the distance tensor
-	#for models, we only know the distance model-to-XP (the diagonal block model-to-model is missing)
-	#res[name_obs][d1][d2] = distance from d1 to d2 relatively to the observable name_obs
-	def Dic_tensor(self,n2,block_XP=True,option='tuned'):
-		res = {name_obs:{} for name_obs in obs_to_type.keys()}
-		path = 'analysis/'
-		savepath = 'analysis/distance_tensor/'+option+'/'
-		if option=='random':
-			endpath = '/random'
+	#display the global ranking of all datasets
+	def Glob_rank_slide(self,option='mean'):
+		if option=='mean':
+			glob_rank = self.mean_glob_rank
+			best_model = self.mean_best_model
 		else:
-			endpath = ''
-		#compute the block XP-XP
-		if block_XP:
-			print('block XP-XP begins')
-			for name_obs,type_obs in obs_to_type.items():
-				print(name_obs)
-				for name1 in XP_data:
-					res[name_obs][name1] = {}
-				for i in range(len(XP_data)):
-					name1 = XP_data[i]
-					obs1 = Load_obs[type_obs](path+name1,name_obs)
-					for j in range(i+1,len(XP_data)):
-						name2 = XP_data[j]
-						obs2 = Load_obs[type_obs](path+name2,name_obs)
-						res[name_obs][name1][name2] = Distance_obs[type_obs](obs1,obs2)
-						res[name_obs][name2][name1] = res[name_obs][name1][name2]
-					res[name_obs][name1][name1] = 0
-			#save the block XP_XP
-			for name_obs,dic in res.items():
-				first_row = ['&']+XP_data
-				tab = [first_row]
-				for name1 in first_row[1:]:
-					row = [name1]
-					for name2 in first_row[1:]:
-						row.append(str(dic[name1][name2]))
-					tab.append(row)
-				np.savetxt(savepath+name_obs+'XP_XP.txt',np.asarray(tab,dtype=str),fmt='%s')
+			glob_rank = self.sim_glob_rank
+			best_model = self.sim_best_model
+		renamed = {'ADM_class_V'+str(i):'V'+str(i) for i in range(1,self.nb_mod+1)}
+		X0 = []; Y0 = []; models = ['ADM_class_V'+str(i) for i in range(1,self.nb_mod+1)]
+		plt.figure()
+		y = 1
+		for name in set(models).difference({'ADM_class_V14',best_model}):
+			x = glob_rank[self.name_to_int[name]]
+			X0.append(x); Y0.append(y)
+		plt.scatter(X0,Y0,c='b',label='models')
+		for name,color,ytext in zip(['ADM_class_V14',best_model],['b','b'],[0.1,-0.15]):
+			x = glob_rank[self.name_to_int[name]]
+			plt.scatter(x,y,c=color)
+			plt.annotate(renamed[name],(x,y),xytext=(x,1+ytext))
+		y = 0
+		#separate the conferences and the schools from the workplace
+		dic_xp = {'g':[],'k':[],'yellow':[]}
+		for name in XP_data:
+			if 'conf' in name:
+				dic_xp['g'].append(name)
+			elif 'work' in name:
+				dic_xp['yellow'].append(name)
+			else:
+				dic_xp['k'].append(name)
+		for label,color in zip(['conferences','schools','workplace'],['g','k','yellow']):
+			X0 = []; Y0 = []
+			for name in dic_xp[color]:
+				x = glob_rank[self.name_to_int[name]]
+				X0.append(x); Y0.append(y)
+			plt.scatter(X0,Y0,c=color,label=label)
+		#emphasize the recovering between models and XP data
+		#first compute the global rank of the best model (lowest global rank among the models)
+		rank_best_model = glob_rank[self.name_to_int[best_model]]
+		plt.plot([rank_best_model,rank_best_model],[-1,2],'--',c='b')
+		#then compute the global rank of the worst XP dataset (highest global rank among the XP data)
+		worst_XP = max([self.name_to_int[name] for name in XP_data],key=lambda i:glob_rank[i])
+		plt.plot([glob_rank[worst_XP],glob_rank[worst_XP]],[-1,2],'--',c='b')
+		plt.xlabel('global rank')
+		plt.ylim(-1,2)
+		plt.yticks([])
+		plt.legend()
+		plt.savefig('figures/score/'+option+'_global_ranking_slide.png')
+		plt.close()
+
+	#display the global ranking of all datasets
+	def Glob_rank(self,version=None,option='mean',other=True):
+		fontsize = 16; markersize = 60
+		if option=='mean':
+			glob_rank = self.mean_glob_rank
+			best_model = self.mean_best_model
+			other_model = self.sim_best_model
+			other_ytext = 1+0.03; dx = 0.5
+			final_label = 'inverse global score resulting from averaged rank'
 		else:
-			for name_obs,type_obs in obs_to_type.items():
-				for name in XP_data:
-					res[name_obs][name] = {}
-		#compute the block XP_model
-		print('block XP-model begins')
-		for name_obs,type_obs in obs_to_type.items():
-			print(name_obs)
-			for version_nb in range(1,n2+1):
-				model_name = 'ADM_class_V'+str(version_nb)
-				res[name_obs][model_name] = {}
-				for name in XP_data:
-					obs1 = Load_obs[type_obs](path+model_name+'/'+name+endpath,name_obs)
-					obs2 = Load_obs[type_obs](path+name,name_obs)
-					res[name_obs][model_name][name] = Distance_obs[type_obs](obs1,obs2)
-					res[name_obs][name][model_name] = res[name_obs][model_name][name]
-		#save the block XP_model
-		for name_obs,dic in res.items():
-			first_row = ['&']+['ADM_class_V'+str(version_nb) for version_nb in range(1,n2+1)]
-			tab = [first_row]
-			for name1 in XP_data:
-				row = [name1]
-				for name2 in first_row[1:]:
-					row.append(str(dic[name1][name2]))
-				tab.append(row)
-			np.savetxt(savepath+name_obs+'XP_model.txt',np.asarray(tab,dtype=str),fmt='%s')
+			glob_rank = self.sim_glob_rank
+			best_model = self.sim_best_model
+			other_model = self.mean_best_model
+			other_ytext = 1.05; dx = 0.1
+			final_label = 'inverse global score resulting from averaged score'
+		X0 = []; Y0 = []; models = ['ADM_class_V'+str(i) for i in range(1,self.nb_mod+1)]
+		affich = {models[i-1]:'V'+str(i) for i in range(1,self.nb_mod+1)}
+		fig,ax = plt.subplots(1,1,constrained_layout=True,figsize=(6,3))
+		y = 1
+		for name in set(models).difference({'ADM_class_V14',best_model,other_model}):
+			x = glob_rank[self.name_to_int[name]]
+			X0.append(x); Y0.append(y)
+		ax.scatter(X0,Y0,c='b',label='models',s=markersize)
+		if version is not None:
+			if type(version)==int:
+				name = 'ADM_class_V'+str(version)
+				x = glob_rank[self.name_to_int[name]]
+				ax.scatter(x,y,c='r',s=markersize)
+				ax.annotate(affich[name],(x,y),xytext=(x,y+0.1),fontsize=fontsize)
+			else:
+				version.sort(key=lambda nb:glob_rank[self.name_to_int['ADM_class_V'+str(nb)]])
+				for i,nb in enumerate(version):
+					name = 'ADM_class_V'+str(nb)
+					x = glob_rank[self.name_to_int[name]]
+					ax.scatter(x,y,c='r',s=markersize)
+					if i%2==0:
+						ytext = y+0.05
+					else:
+						ytext = y-0.15
+					ax.annotate(affich[name],(x,y),xytext=(x,ytext),fontsize=fontsize)
+		for name,color,ytext in zip(['ADM_class_V14',best_model],['r','r'],[0.05,-0.15]):
+			x = glob_rank[self.name_to_int[name]]
+			ax.scatter(x,y,c=color,s=markersize)
+			ax.annotate(affich[name],(x,y),xytext=(x,y+ytext),fontsize=fontsize)
+		#if we display the best model according to the other strategy
+		if other:
+			x = glob_rank[self.name_to_int[other_model]]
+			#check whether best_model and other_models have the same global rank
+			if x==glob_rank[self.name_to_int[best_model]]:
+				marker = MarkerStyle('o',fillstyle='left')
+				other_xtext = x - dx
+			else:
+				marker = 'o'
+				other_xtext = x
+			ax.scatter(x,y,c='y',marker=marker,s=markersize)
+			ax.annotate(affich[other_model],(x,y),xytext=(other_xtext,other_ytext),fontsize=fontsize)
+		y = 0
+		#separate the conferences from the schools and workplace
+		dic_xp = {'g':[],'k':[],'purple':[]}
+		for name in XP_data:
+			if 'conf' in name:
+				dic_xp['g'].append(name)
+			elif 'work' in name:
+				dic_xp['purple'].append(name)
+			else:
+				dic_xp['k'].append(name)
+		for label,color in zip(['conferences','schools','workplace'],['g','k','purple']):
+			X0 = []; Y0 = []
+			for name in dic_xp[color]:
+				x = glob_rank[self.name_to_int[name]]
+				X0.append(x); Y0.append(y)
+			ax.scatter(X0,Y0,c=color,label=label,s=markersize)
+		#emphasize the recovering between models and XP data
+		#first compute the global rank of the best model (lowest global rank among the models)
+		rank_best_model = glob_rank[self.name_to_int[best_model]]
+		ax.plot([rank_best_model,rank_best_model],[-1,2],'--',c='b')
+		#then compute the global rank of the worst XP dataset (highest global rank among the XP data)
+		worst_XP = max([self.name_to_int[name] for name in XP_data],key=lambda i:glob_rank[i])
+		ax.plot([glob_rank[worst_XP],glob_rank[worst_XP]],[-1,2],'--',c='b')
+		ax.set_xlabel(final_label,fontsize=fontsize)
+		for label in ax.get_xticklabels():
+			label.set_fontsize(fontsize)
+		ax.set_ylim(-0.2,1.2)
+		ax.set_yticks([])
+		ax.legend(fontsize=fontsize)
+		plt.savefig('figures/score/'+option+str(self.nb_mod)+'_global_ranking.png')
 
+	def Display_top_stab(self):
+		fontsize = 16
+		X = []; Y = []
+		num_obs = []
+		for obs in type_to_obs['vector']+type_to_obs['distribution']:
+			num_obs.append(self.obs_to_int[obs])
+		for u in range(1,self.nb_data+5):
+			#dic_Q[i] = nb of observables st the rank of ADM version i is <= u
+			dic_Q = {i:1 for i in range(1,20)}
+			for t in num_obs:
+				for k in range(self.nb_data):
+					i_mod,rank = self.ranking[t,k,:]
+					model = self.int_to_name[i_mod]
+					if 'V' in model:
+						i = int(model[model.find('V')+1:])
+						dic_Q[i] *= int(rank<=u)
+			X.append(u)
+			Y.append(sum(list(dic_Q.values())))
+		#display the results
+		fig,ax = plt.subplots(1,1,constrained_layout=True)
+		ax.set_xlabel('u',fontsize=fontsize)
+		ax.set_ylabel('Q',fontsize=fontsize)
+		ax.set_yticks(range(0,20,2))
+		X = np.asarray(X); Y = np.asarray(Y)
+		ax.plot(X,Y,'.')
+		#add the upper bound for Q(u)
+		ind = 0
+		while Y[ind]==0:
+			ind += 1
+		u = X[ind]; q = Y[ind]
+		u_lim = u + (self.nb_mod-q)/(self.nb_obs-2)
+		X1 = np.asarray([u,u_lim])
+		Y1 = (self.nb_obs-2)*(X1-u) + q
+		#ax.plot(X1,Y1,'--')
+		for label in ax.get_yticklabels()+ax.get_xticklabels():
+			label.set_fontsize(fontsize)
+		plt.savefig('figures/score/top_stability_ranking.png')
 
-'''
-For each model, we need to precise the path where should be loaded the sampled observables.
-Indeed, there are 2 cases: either the model is adapted to each reference, in which case the path depends on the considered observable,
-or the model yields a single TN for every reference: in this case, the path must be precised.
-'''
+		#among all the models with rank <= u, what is the proportion of recurrent models,
+		#i.e. i st Q_{i} = 1
 
-#compute the distance btw two data sets wrt a given ref obs
-#assumes that this obs has already been sampled
-def distance_single(savename1,savename2,ref_obs):
-	type_obs = OBS_TO_TYPE[ref_obs]
-	obs1 = Load_obs[type_obs](path+model_name+'/'+name+endpath,ref_obs)
-	obs2 = Load_obs[type_obs](path+name,ref_obs)
-	res[name_obs][model_name][name] = Distance_obs[type_obs](obs1,obs2)
-
-
+	#display the rankings of all datasets w.r.t. every observable on the same figure
+	def Display_rankings(self):
+		renamed_XP_data = {name:name for name in XP_data}
+		renamed_XP_data['highschool3'] = 'HS3'
+		fontsize = 14
+		renamed_obs = self.Get_renamed_obs()
+		for obs,val in renamed_obs.items():
+			renamed_obs[obs] = val.replace('.','')
+		renamed_obs['edge_events_activity'] = 'nb of\nevents'
+		renamed_obs['edge_newborn_activity'] = 'edge\nNBA'
+		renamed_obs['clustering_coeff'] = 'clustering\ncoeff'
+		renamed_obs['cc_size'] = 'cc size'
+		list_obs = list(obs_to_type.keys())
+		obs_labels = [renamed_obs[obs] for obs in list_obs]
+		fig,ax = plt.subplots(1,1,constrained_layout=True)
+		ax.set_xlim(0,self.nb_obs)
+		ax.set_ylim(-1,self.nb_data)
+		ax.set_axis_off()
+		for x in range(1,self.nb_obs):
+			ax.plot([x,x],[-1,self.nb_data],color='k')
+		ax.plot([0,self.nb_obs],[self.nb_data-1,self.nb_data-1],color='k')
+		for i,obs in enumerate(obs_labels):
+			x = i+0.5; y = self.nb_data-0.5
+			ax.annotate(obs,(x,y),fontsize=fontsize,ha='center')
+		#display the rankings
+		for i,obs in enumerate(list_obs):
+			x_pos = i+0.5; t = self.obs_to_int[obs]
+			#we will write in the same case (same y) the numbers of models with same rank
+			list_chunks = []
+			k = 0; rank = 1; chunk = []
+			while k<np.size(self.ranking,1):
+				i,r = self.ranking[t,k,:]
+				if r>rank:
+					list_chunks.append(chunk)
+					rank = r
+					chunk = []
+				name = self.int_to_name[i]
+				if 'V' in name:
+					version_nb = name[name.find('V')+1:]
+					chunk.append(version_nb)
+				else:
+					chunk.append(renamed_XP_data[name])
+				k += 1
+			#add the eventual last chunk
+			if chunk:
+				list_chunks.append(chunk)
+			#place the chunks
+			for j,chunk in enumerate(list_chunks):
+				y_pos = self.nb_data-1.75-j
+				text = chunk[0]
+				for name in chunk[1:]:
+					text += ', '+name
+				if text in renamed_XP_data.values():
+					color = 'green'
+				elif text in ['1','9']:
+					color = 'red'
+				elif text=='14':
+					color = 'blue'
+				else:
+					color = 'black'
+				ax.annotate(text,(x_pos,y_pos),fontsize=fontsize,ha='center',color=color)
+		plt.show()
 
 def Setup(nb_mod):
 	#figures
@@ -574,6 +951,69 @@ def Setup(nb_mod):
 		if not os.path.isdir(path):
 			os.mkdir(path)
 
+#compute the distance tensor
+#for models, we only know the distance model-to-XP (the diagonal block model-to-model is missing)
+#res[name_obs][d1][d2] = distance from d1 to d2 relatively to the observable name_obs
+def Dic_tensor(n2,block_XP=True,option='tuned'):
+	res = {name_obs:{} for name_obs in obs_to_type.keys()}
+	path = 'analysis/'
+	savepath = 'analysis/distance_tensor/'+option+'/'
+	if option=='random':
+		endpath = '/random'
+	else:
+		endpath = ''
+	#compute the block XP-XP
+	if block_XP:
+		print('block XP-XP begins')
+		for name_obs,type_obs in obs_to_type.items():
+			print(name_obs)
+			for name1 in XP_data:
+				res[name_obs][name1] = {}
+			for i in range(len(XP_data)):
+				name1 = XP_data[i]
+				obs1 = Load_obs[type_obs](path+name1,name_obs)
+				for j in range(i+1,len(XP_data)):
+					name2 = XP_data[j]
+					obs2 = Load_obs[type_obs](path+name2,name_obs)
+					res[name_obs][name1][name2] = Distance_obs[type_obs](obs1,obs2)
+					res[name_obs][name2][name1] = res[name_obs][name1][name2]
+				res[name_obs][name1][name1] = 0
+		#save the block XP_XP
+		for name_obs,dic in res.items():
+			first_row = ['&']+XP_data
+			tab = [first_row]
+			for name1 in first_row[1:]:
+				row = [name1]
+				for name2 in first_row[1:]:
+					row.append(str(dic[name1][name2]))
+				tab.append(row)
+			np.savetxt(savepath+name_obs+'XP_XP.txt',np.asarray(tab,dtype=str),fmt='%s')
+	else:
+		for name_obs,type_obs in obs_to_type.items():
+			for name in XP_data:
+				res[name_obs][name] = {}
+	#compute the block XP_model
+	print('block XP-model begins')
+	for name_obs,type_obs in obs_to_type.items():
+		print(name_obs)
+		for version_nb in range(1,n2+1):
+			model_name = 'ADM_class_V'+str(version_nb)
+			res[name_obs][model_name] = {}
+			for name in XP_data:
+				obs1 = Load_obs[type_obs](path+model_name+'/'+name+endpath,name_obs)
+				obs2 = Load_obs[type_obs](path+name,name_obs)
+				res[name_obs][model_name][name] = Distance_obs[type_obs](obs1,obs2)
+				res[name_obs][name][model_name] = res[name_obs][model_name][name]
+	#save the block XP_model
+	for name_obs,dic in res.items():
+		first_row = ['&']+['ADM_class_V'+str(version_nb) for version_nb in range(1,n2+1)]
+		tab = [first_row]
+		for name1 in XP_data:
+			row = [name1]
+			for name2 in first_row[1:]:
+				row.append(str(dic[name1][name2]))
+			tab.append(row)
+		np.savetxt(savepath+name_obs+'XP_model.txt',np.asarray(tab,dtype=str),fmt='%s')
 
 #print all versions that did not run
 def Get_failures():

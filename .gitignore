@@ -1,2 +1,6 @@
-fast_config.sh
-fast_push.sh
+/config_fast.sh
+/push_fast.sh
+/data/ADM/**/distribution/
+/data/ADM/**/point/
+/data/ADM/**/vector/
+/data/ADM/**/random/

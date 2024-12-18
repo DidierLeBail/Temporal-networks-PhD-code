@@ -2,7 +2,7 @@ import numpy as np
 import math
 import networkx as nx
 import matplotlib.pyplot as plt
-from Librairies.settings import Load_vector
+from Librairies.utils import Load_vector
 
 #identify a profile with its image under 1<-->2
 #also separate the transverse from single satellite profiles

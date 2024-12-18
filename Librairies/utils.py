@@ -1,11 +1,7 @@
-#!!!do not use mutable objects as default values!!!
 import os
 #os.path.dirname(__file__) returns the absolute path to the parent directory of __file__ (current file)
-CURRENT_DIR = os.path.dirname(__file__)
-PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
-ADM_DIR = os.path.join(PROJECT_ROOT,'Articles/ADM_class/analysis')
+PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 import numpy as np
-from math import *
 import matplotlib.pyplot as plt
 import Librairies.atn as atn
 
@@ -54,11 +50,6 @@ def increase_dic(dic,tuple_keys):
 #anything below this line should be checked
 ########################################################################
 
-
-
-
-
-XP_data = list(np.loadtxt(os.path.join(CURRENT_DIR,'XP_data.txt'),dtype=str))
 
 type_to_obs = {'point':['clustering_coeff','deg_assortativity'],'vector':['ETN3']}
 type_to_obs['distribution'] = ['cc_size']

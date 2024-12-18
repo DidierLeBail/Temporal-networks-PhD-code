@@ -18,3 +18,6 @@ if __name__ == '__main__':
 	#load xp dataset
 	xp_tij = tp.XP_name(ref_name).load_TN()
 	print(np.shape(xp_tij))
+
+	#metrics for network comparison
+	

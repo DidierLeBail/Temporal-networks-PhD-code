@@ -4,3 +4,4 @@
 /data/ADM/**/point/
 /data/ADM/**/vector/
 /data/ADM/**/random/
+/**/__pycache__/

@@ -3,8 +3,8 @@ import networkx as nx
 import random as rd
 from Librairies.utils import PROJECT_ROOT
 
-#load TN data of a given name, this TN is not a randomization of another
-def Load_TN_no_random(name):
+#load TN data of a given name
+def Load_TN(name):
 	if type(name)==tuple:
 		if type(name[0])==str:
 			#name should be of the form ('ADM',version_nb,reference)
@@ -20,101 +20,10 @@ def Load_TN_no_random(name):
 			return name[0]
 	return np.loadtxt(PROJECT_ROOT+'/data/'+name+'.txt',dtype=int)
 
-#load TN data of a given name
-def Load_TN(name):
-	if type(name)==tuple:
-		if type(name[-1])==str:
-			if 'randomized' in name[-1]:
-				if len(name)==2:
-					data = Load_TN_no_random(name[0])
-				else:
-					data = Load_TN_no_random(name[:-1])
-				#randomization type
-				num_random = int(name[-1][10:])
-				#strong time shuffling: the timeline of each edge is shuffled
-				if num_random==1:
-					#collect the number of times each edge is active, i.e. the time aggregated network
-					time_agg = nx.Graph()
-					for n in range(np.size(data,0)):
-						i,j = data[n,1:]
-						if time_agg.has_edge(i,j):
-							time_agg[i][j]['weight'] += 1
-						else:
-							time_agg.add_edge(i,j,weight=1)
-					#draw new activity times for each edge
-					list_times = list(range(data[-1,0]+1)) #list of available times
-					new_TN = {} #new_TN[t] = set of edges active at time t
-					for edge in time_agg.edges:
-						new_times = rd.sample(list_times,time_agg[edge[0]][edge[1]]['weight'])
-						for t in new_times:
-							if t in new_TN:
-								new_TN[t].add(edge)
-							else:
-								new_TN[t] = {edge}
-					#put new_TN under the form of a formatted measurement table
-					new_data = []
-					for num,t in enumerate(sorted(new_TN.keys())):
-						for edge in new_TN[t]:
-							new_data.append([num,*edge])
-					return np.asarray(new_data,dtype=int)
-				#weaker time shuffling: the global edge activity timeline is preserved
-				#however, co-occurent edges before this shuffling may not be after
-				elif num_random==2:
-					#get data_time
-					data_time = []
-					n1 = 0; n_max = np.size(data,0)
-					for n in range(1,n_max):
-						t = data[n-1,0]
-						if data[n,0]>t:
-							data_time += [[n1,n]]
-							n1 = n
-					#take care of the last line of data
-					t = data[-1,0]
-					data_time += [[n1,n_max]]
-					#shuffle the measurement table
-					rng = np.random.default_rng()
-					new_data = rng.shuffle(data)
-					for t,el in enumerate(data_time):
-						new_data[el[0]:el[1],0] = t
-					return new_data
-				elif num_random==3:
-					pass
-					#keep contact and intercontact the same ; i.e. shuffle edge events
-				elif num_random==4:
-					pass
-					#reattribute the edge activity profiles among edges
-			return Load_TN_no_random(name)
-		return Load_TN_no_random(name)
-	return Load_TN_no_random(name)
 
-#an observable is written as 'object'0'object property we want to sample', e.g.
-#'NCTN0nb_diff' or 'edge0event_duration' or 'ICC' or 'node_space_weight'
-def Obs_to_chunks(obs):
-	if '0' in obs:
-		obj1,prop = obs.split('0')
-		if 'duration' in prop or 'events' in prop:
-			obj2 = 'train'
-		elif 'time_weight' in prop or 'motif' in prop or 'entropy' in prop or 'nb' in prop:
-			obj2 = 'time_weight'
-		return ([obj1,obj2],prop)
-	return ([],obs)
 
 #return how we should call the dataset corresponding to name in a figure or a data file
 def Get_savename(name):
-	if type(name)==tuple:
-		if type(name[-1])==str:
-			if 'randomized' in name[-1]:
-				if len(name)==2:
-					return Get_savename_no_random(name[0])+'_'+name[-1]
-				else:
-					return Get_savename_no_random(name[:-1])+'_'+name[-1]
-			return Get_savename_no_random(name)
-		return Get_savename_no_random(name)
-	return Get_savename_no_random(name)
-
-#return how we should call the dataset corresponding to name in a figure or a data file
-#given the dataset is not a randomization of another
-def Get_savename_no_random(name):
 	if type(name)==tuple:
 		if type(name[0])==str:
 			if name[0]=='ADM':
@@ -129,8 +38,7 @@ def Get_savename_no_random(name):
 		savename = name
 	return savename
 
-#for not randomized datasets
-def Savename_to_name_no_random(savename):
+def Savename_to_name(savename):
 	if savename[:7]=='min_ADM':
 		name = ('min_ADM',int(savename[7:]))
 	elif savename[:6]=='min_EW':
@@ -144,17 +52,6 @@ def Savename_to_name_no_random(savename):
 		name = savename
 	return name
 
-#include randomized datasets
-def Savename_to_name(savename):
-	if '_randomized' in savename:
-		ind = 0
-		while savename[ind:ind+11]!='_randomized':
-			ind += 1
-		name_no_random = Savename_to_name_no_random(savename[:ind])
-		if type(name_no_random)==tuple:
-			return name_no_random + (savename[ind+1:],)
-		return (name_no_random,savename[ind+1:])
-	return Savename_to_name_no_random(savename)
 
 def Load_TN_Min_EW(version_nb):
 	return atn.Min_EW(138,3635,0.79,**Get_versions(choice="min_EW")[version_nb]).Evolve()

@@ -1,7 +1,11 @@
 /config_fast.sh
 /push_fast.sh
-/data/ADM/**/distribution/
-/data/ADM/**/point/
-/data/ADM/**/vector/
-/data/ADM/**/random/
+#/data/ADM/**/distribution/
+#/data/ADM/**/point/
+#/data/ADM/**/vector/
+#/data/ADM/**/random/
 /**/__pycache__/
+/ADM_metrics_save.py
+/setup.py
+/data/
+/results/

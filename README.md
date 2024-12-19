@@ -2,7 +2,7 @@
 
 Here is available the code used in the papers [Modeling framework unifying contact and social networks](https://scholar.google.com/citations?view_op=view_citation&hl=fr&user=c_jb2A4AAAAJ&citation_for_view=c_jb2A4AAAAJ:u5HHmVD_uO8C).
 
-Run setup.py before main.py to set up the required folder arborescence. 
+Unzip the file Archive.zip before running main.py!! 
 The code is organized as follows.
 
 ## data

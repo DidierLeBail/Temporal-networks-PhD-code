@@ -1,15 +1,5 @@
-& git filter-branch --env-filter '
-OLD_EMAIL="selmakouaiche@gmail.com"
-CORRECT_NAME="DidierLeBail"
-CORRECT_EMAIL="didierm.lebail@gmail.com"
-if [ "$GIT_COMMITTER_EMAIL" = "$OLD_EMAIL" ]
-then
-    export GIT_COMMITTER_NAME="$CORRECT_NAME"
-    export GIT_COMMITTER_EMAIL="$CORRECT_EMAIL"
-fi
-if [ "$GIT_AUTHOR_EMAIL" = "$OLD_EMAIL" ]
-then
-    export GIT_AUTHOR_NAME="$CORRECT_NAME"
-    export GIT_AUTHOR_EMAIL="$CORRECT_EMAIL"
-fi
-' --tag-name-filter cat -- --branches --tags
+#& git branch -m master main
+#& git fetch origin
+#& git branch -u origin/main main
+#& git remote set-head origin -a
+& git push origin --delete old_main

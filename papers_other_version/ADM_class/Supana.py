@@ -1,7 +1,3 @@
-"""
-for the supplementary material of the ADM paper
-"""
-
 from Global import *
 import networkx as nx
 import Temp_net

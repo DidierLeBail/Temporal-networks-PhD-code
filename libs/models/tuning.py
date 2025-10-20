@@ -1,13 +1,165 @@
-from Global import *
+"""Allows a temporal network generator to be tuned, so that
+the generated networks are close to a given reference.
+
+The proximity here is defined as the cosine similarity between temporal motifs
+at multiple levels of temporal aggregation.
+"""
+
+from typing import List, Union
+import os
 import networkx as nx
-import Temp_net
-import atn
-import sys
+import numpy as np
+import json
+
+from libs.temporal_network import Table_interaction
+import libs.observables.centered_motifs as ctn
+import defs
+ROOT_DIR = os.path.dirname(__file__)
+for _ in range(2):
+	ROOT_DIR = os.path.dirname(ROOT_DIR)
+
+__all__ = ["Metric_tensor", "analyze_ref"]
+
+class Metric_tensor:
+	pass
+
+class Reference_observables:
+	r"""Define the observables that will be targetted by the tuning of a model.
+
+	The corresponding configuration dictionary should be as follows:
+	{
+		"obs_name": Literal['NCTN', 'ECTN'],
+		"agg_levels": List[int],
+		"truncate": Union[int, None]
+	}
+
+	The default configuration is:
+	{
+		"obs_name": 'NCTN',
+		"agg_levels": [i for i in range(1, 11)],
+		"truncate": 20
+	}
+	"""
+	def __init__(self):
+		self.config_path = os.path.join(ROOT_DIR, "analysis", "model_tuning", "config_obs.json")
+	
+	def load(self) -> dict:
+		"""Returns the current config for the reference observables.
+		
+		By default, these are the NCTN distribution computed at the aggregation levels from 1 to 10 included,
+		and truncated to the 20 most frequent motifs.
+		"""
+		return json.load(self.config_path)
+
+	def _check_format(self, config: dict[str, Union[str, List[int]]]):
+		if not "agg_levels" in config:
+			raise AttributeError("config should include 'agg_levels' as a key")
+		try:
+			if not config["obs_name"] in ['NCTN', 'ECTN']:
+				raise ValueError("the value associated to 'obs_name' should be either 'NCTN' or 'ECTN'")
+		except KeyError:
+			raise AttributeError("config should include 'obs_name' as a key")
+		try:
+			if not isinstance(config['agg_levels'][0], int):
+				raise ValueError("the value associated to 'agg_levels' should be a list of ints")
+		except TypeError or IndexError:
+			raise ValueError("the value associated to 'agg_levels' should be a list of ints")
+		try:
+			if not isinstance(config["truncate"], int):
+				raise ValueError("the value associated to 'truncate' should be either an int or None")
+		except KeyError:
+			raise AttributeError("config should include 'truncate' as a key")
+
+	def set(self, config: dict[str, Union[str, List[int]]]):
+		# check the format
+		self._check_format()
+
+		# overwrite the configuration file
+		json.dump(config, self.config_path)
+
+def analyze_ref(ref_name:str):
+	"""
+	Compute the readable parameters for the specified reference,
+	and save these data in data/analysis/refs/<ref_name>/readable_params.txt
+	Also compute the reference observables (used for fitness computation) and save them in data/analysis/refs/<ref_name>/ref_obs.txt
+	"""
+	ref_path = os.path.join(ROOT_DIR, "data", "temporal_networks", "formatted", ref_name + '.txt')
+	ref_dir_out = os.path.join(ROOT_DIR, "data", "analysis", "refs", ref_name)
+	os.makedirs(os.path.join(ref_dir_out), exist_ok=True)
+
+	# compute the readable parameters of each reference
+	ref = Table_interaction(ref_path)
+
+	# collect descriptive information:
+	# nb of nodes, number of timestamps, number of temporal edges,
+	# minimum node activity, maximum node activity, mean and std of
+	# the distribution of log(node activity)
+
+	global_info = [
+		['nb_nodes', 'duration', 'nb_temp_edges', 'a_min', 'a_max', 'a_mu', 'a_sigma'],
+		[ref.nb_nodes, ref.duration, len(ref.data), None, None, None, None]
+	]
+
+	# estimate the parameters a_min and a_max
+	activity = np.zeros(ref.nb_nodes, dtype=float)
+	for t in range(ref.duration):
+		for node in ref.nodes(t):
+			activity[node] += 1
+
+	global_info[1][3] = np.min(activity) / ref.duration
+	global_info[1][4] = np.max(activity) / ref.duration
+
+	# estimate the parameters a_mu and a_sigma
+	tab = np.log10(activity) - np.log10(ref.duration)
+	values, bins = np.histogram(tab, density=True)
+	bin_min = len(bins) - 3
+	while values[bin_min] > values[-1]:
+		bin_min -= 1
+	mu_tab = [el for el in tab if el >= bins[bin_min]]
+	global_info[1][5] = np.mean(mu_tab)
+	global_info[1][6] = 2*np.sqrt(np.var(mu_tab))
+	
+	# collect the reference observables (motifs at multiple levels of aggregation):
+	# each row of `ref_obs` corresponds to a different value of aggregation
+	ref_config = Reference_observables().load()
+	ref_obs = []
+	for agg in ref_config['agg_levels']:
+		ref.sliding_agg(agg)
+		distr = ctn.sample_motifs(
+			ref,
+			ref_config['obs_name'],
+			truncate=ref_config['truncate']
+		)
+
+
+	# store the results:
+	
+	# global_info
+	np.savetxt(os.path.join(ref_dir_out, 'global_info.txt'), np.array(global_info, dtype=str), fmt='%s', delimiter=',')
+	
+	# reference observables
+	np.savetxt(os.path.join(ref_dir_out, 'ref_obs.txt'), np.array(global_info, dtype=int), fmt='%d', delimiter=',')
+
+def tune_models():
+	"""
+	define the models considered and their hyperparameters, and tune each model instance with respect to the references
+	then save the best parameters, the evolution of the fitness over the generations, the hyperparameters of the genetic algorithm
+	and the best genome
+	data are saved at data/analysis/tuned/
+	"""
+	pass
+
+def get_metric_tensor():
+	"""
+	compute the metric tensor between each tuned model and its references
+	then save the data at data/analysis/metric_tensor/
+	"""
+	pass
 
 #compute the distributions of the reference observables
 #as well as the number of nodes and the duration of the temporal network
 #of name name
-def Analyze(name,dataset=None,supath=''):
+def get_ref_data(name,dataset=None,supath=''):
 	#load the raw data and convert it into a temporal network
 	if dataset is None:
 		dataset = np.loadtxt(name+'.txt',dtype=int)
@@ -166,7 +318,7 @@ class Pop_model:
 		#tune the model parameters to those coded by seq
 		self.Sequence_to_model(seq)
 		#refresh the model data
-		self.model.Refresh()
+		self.model.refresh()
 		#compute the interaction graph
 		model_data = self.model.Evolve()
 		if model_data is None:
@@ -303,4 +455,4 @@ def Closest_instance(name,version_nb):
 
 #determine the closest instance of the version version_nb of the ADM model from the empirical dataset name
 #then analyze this instance
-Closest_instance(sys.argv[1].replace('\r',''),int(sys.argv[2].replace('\r','')))
+

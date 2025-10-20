@@ -40,8 +40,8 @@ def Analyze(name,dataset=None,supath=''):
 
 class Pop_model:
 	"""
-	genetic coding (depends on the free parameters),
-	two types of parameters:
+	genetic coding (depends on the free parameters)
+	two types of parameters :
 	 - m and c, which are of the order of 1
 	 - parameters corresponding to probabilities
 	for coding proba, we use a binary exponential coding :

@@ -1,73 +1,130 @@
+"""
+Defines models that generate a temporal network.
+Usually, these models contain parameters, that can be fine-tuned using `model_tuning.py`.
+They can also contain hyperparameters, that must be specified before tuning the parameters, since the tuning affects only the parameters.
+"""
+
+from typing import Sequence, Union, Tuple, Literal
 import numpy as np
-from math import *
+from math import sqrt, floor, ceil
 import random as rd
 import networkx as nx
-#from scipy.stats import truncnorm
+from scipy.stats import truncnorm
 
-#return a number drawn from the power law with fixed bounds and exponent -gamma (P(x)=x^{-gamma})
-def Power_law(bounds,gamma,size=1):
-	if gamma==1:
-		return bounds[0]*(bounds[1]/bounds[0])**np.random.random(size)
-	return bounds[0]*(1 + np.random.random(size)*((bounds[1]/bounds[0])**(1-gamma) - 1))**(1/(1-gamma))
+def power_law(
+	bounds:Tuple[float, float],
+	gamma:float,
+	size:Union[int, Sequence[int]]=1
+):
+	r"""draw `size` floats from the power-law distribution specified by `bounds` and `gamma`
+
+	Parameters
+	----------
+	bounds : Tuple[float, float]
+		Give the lower and upper bounds for the power-law.
+		Note that the lower bound should be strictly greater than zero! (indeed the pdf of a power-law with negative exponent always diverges at zero)
+	gamma : float
+		the exponent of the power-law
+	size : Union[int, Sequence[int]], optional
+		the shape of the result, by default 1
+
+	Returns
+	-------
+	Union[float, Sequence[float]]
+		the drawn samples, of shape specified by `size`
+	
+	Notes
+	-----
+	Denoting `bounds` by :math:`(m, M)`, `gamma` by :math:`\gamma`, and :math:`1_{I}` the indicator function of :math:`I`, the probability density is given by:
+
+	.. math:: \forall x\in\mathbb{R}, p(x) \propto 1_{[m, M]}(x) \frac{1}{x^{\gamma}}
+
+	"""
+	try:
+		return bounds[0] * (1 + np.random.random(size) * ((bounds[1] / bounds[0])**(1 - gamma) - 1))**(1 / (1 - gamma))
+	except ZeroDivisionError:
+		return bounds[0] * (bounds[1] / bounds[0])**np.random.random(size)
+
+# draw samples from tab with specified normalized weights
+def draw_from_tab(tab, weights):
+	x = rd.random()
+	s = 0; i = 0
+	while s<x:
+		s += weights[i]
+		i += 1
+	return tab[i-1]
 
 class Gen_ATN:
-	"""any constructor of temporal networks inherits from this class"""
-	def __init__(self,N,duree):
+	"""
+	abstract base class for specifying a model generating a temporal network
+	"""
+	
+	def __init__(self,
+		N:int,
+		duree:int
+	):
 		self.N = N
 		self.duree = duree
 		self.events = []
-		self.activated = np.zeros(N,dtype=int)
+		self.activated = np.zeros(N, dtype=int)
 		self.t_min = 0
 
-	def Edge_to_ind(self,i,j):
-		if i>j:
-			i,j = j,i
-		return i*(2*self.N-i-1)//2 + j-i-1
+	def edge_to_ind(self,
+		i:int,
+		j:int
+	):
+		if i > j:
+			i, j = j, i
+		return i * (2 * self.N - i - 1) // 2 + j - i - 1
 
-	def Evolve(self,t_min=0,max_count=3,max_locount=5):
+	def evolve(self,
+		t_min:int=0,
+		max_count:int=3,
+		max_locount:int=5
+	):
 		self.t_min = t_min
-		#nb of nodes that have activated during the run
+		# nb of nodes that have activated during the run
 		nb_nodes = 0; reinitialize = False; count = 0
 		while nb_nodes<self.N and count<max_count:
-			#reinitialize the TN
+			# reinitialize the TN
 			if reinitialize:
-				self.Refresh()
-			#start the time flow
+				self.refresh()
+			# start the time flow
 			t = 0; loc_count = 0
-			while t<self.duree+self.t_min and loc_count<max_locount:
-				if t*100%(self.duree+self.t_min)==0:
-					print(str(t*100//(self.duree+self.t_min))+" % computed")
-				newt = self.Step(t)
-				if newt==t:
+			while t < self.duree + self.t_min and loc_count < max_locount:
+				if (t * 100)%(self.duree + self.t_min) == 0:
+					print(str((t * 100) // (self.duree + self.t_min)) + " % computed")
+				newt = self.step(t)
+				if newt == t:
 					loc_count += 1
 				else:
 					t = newt
 					loc_count = 0
-			if loc_count==max_locount:
+			if loc_count == max_locount:
 				reinitialize = True; count += 1
 			else:
-				#nb of nodes that have activated during the run
+				# nb of nodes that have activated during the run
 				nb_nodes = np.sum(self.activated)
 				reinitialize = True; count += 1
-		if nb_nodes==self.N:
-			#return the events data
-			return np.array(self.events,dtype=int)
+		if nb_nodes == self.N:
+			# return the events data
+			return np.array(self.events, dtype=int)
 		else:
-			print('nb of nodes that activated: '+str(nb_nodes))
+			print('nb of nodes that activated: ' + str(nb_nodes))
 			return None
 
-	#record the events and identify the activated nodes
-	def Record_event(self,t,event):
-		#check the recording has started
-		if t<self.t_min:
+	def record_event(self, t:int, event:nx.Graph):
+		"""record the events and identify the activated nodes"""
+		# check the recording has started
+		if t < self.t_min:
 			pass
 		else:
-			#update the activated nodes
+			# update the activated nodes
 			for i in event.nodes:
 				self.activated[i] = 1
-			#update self.events
+			# update self.events
 			for edge in event.edges:
-				self.events.append([t-self.t_min,*edge])
+				self.events.append([t - self.t_min, *edge])
 
 class Life_game:
 	"""simulate the game of life and convert the grid world into a temporal network, the intuition behind
@@ -75,7 +132,7 @@ class Life_game:
 	behaviour of empirical temporal networks.
 	The world is a torus.
 	"""
-	def __init__(self,N,first_image=None):
+	def __init__(self, N, first_image=None):
 		#game of life variables
 		self.N = N
 		self.size = floor(sqrt(N))
@@ -88,7 +145,7 @@ class Life_game:
 		self.events = []
 
 	#update the grid state
-	def Update(self):
+	def update(self):
 		new_grid = np.zeros(self.grid.shape,dtype=int)
 		for i in range(self.size):
 			for j in range(self.size):
@@ -97,7 +154,7 @@ class Life_game:
 				new_grid[i,j] = int(nb_ngh==3 or (self.grid[i,j]==1 and nb_ngh==2))
 		self.grid[:,:] = new_grid[:,:]
 
-	def Refresh(self,first_image):
+	def refresh(self,first_image):
 		self.activated = np.zeros(self.size,dtype=int)
 		self.events = []
 		self.grid = first_image
@@ -111,7 +168,7 @@ class Life_game:
 	#we have to symmetrize it and the nb of nodes becomes self.size instead of self.N
 	#to symmetrize, some possibilities are: (1) G_i,j = grid[i,j] xor grid[j,i], which automatically
 	#removes the self-loops (2) G_i,j = grid[i,j] or grid[j,i] (3) grid[i,j] and grid[j,i] (4) etc
-	def Grid_to_net(self):
+	def grid_to_net(self):
 		net = nx.Graph()
 		for i in range(self.size-1):
 			for j in range(i+1,self.size):
@@ -119,16 +176,16 @@ class Life_game:
 					net.add_edge(i,j)
 		return net
 
-	def Step_no_recording(self,t):
+	def step_no_recording(self,t):
 		event = self.Grid_to_net()
-		self.Update()
+		self.update()
 		if not event:
 			return t
 		return t+1
 
-	def Step(self,t):
-		event = self.Grid_to_net()
-		self.Update()
+	def step(self,t):
+		event = self.grid_to_net()
+		self.update()
 		if not event:
 			return t
 		for i in event.nodes:
@@ -141,11 +198,11 @@ class Life_game:
 	#obtain the temporal network from Game of Life dynamics
 	#starting_time is the time needed to achieve stationary dynamics
 	#data recording begins only after that time
-	def Evolve(self,duree,max_locount=5,starting_time=0):
+	def evolve(self,duree,max_locount=5,starting_time=0):
 		#wait for the first interaction
 		t = 0; loc_count = 0
 		while t==0 and loc_count<max_locount:
-			t = self.Step_no_recording(t)
+			t = self.step_no_recording(t)
 			if t==0:
 				loc_count += 1
 		if loc_count==max_locount:
@@ -154,7 +211,7 @@ class Life_game:
 		while t<starting_time and loc_count<max_locount:
 			if t*100%(duree+starting_time)==0:
 				print(str(t*100//(duree+starting_time))+" % computed")
-			newt = self.Step_no_recording(t)
+			newt = self.step_no_recording(t)
 			if newt==t:
 				loc_count += 1
 			else:
@@ -164,7 +221,7 @@ class Life_game:
 		while t<duree+starting_time and loc_count<max_locount:
 			if t*100%(duree+starting_time)==0:
 				print(str(t*100//(duree+starting_time))+" % computed")
-			newt = self.Step(t)
+			newt = self.step(t)
 			if newt==t:
 				loc_count += 1
 			else:
@@ -216,9 +273,9 @@ class Min_EW(Gen_ATN):
 		else:
 			self.Prune = self.Prune_none
 		if var_act:
-			self.Step = self.Step_var_act
+			self.step = self.step_var_act
 		else:
-			self.Step = self.Step_cst_act
+			self.step = self.step_cst_act
 
 	def Prune_none(self):
 		pass
@@ -276,7 +333,7 @@ class Min_EW(Gen_ATN):
 		self.adjacent_graph.remove_edges_from(newborn)
 
 	#erase run data to be ready for a new run
-	def Refresh(self):
+	def refresh(self):
 		self.activated[:] = 0
 		self.events = []
 		self.social_graph = nx.Graph()
@@ -284,7 +341,7 @@ class Min_EW(Gen_ATN):
 		self.adjacent_graph.add_edges_from(self.ind_to_edge)
 
 	#evolve the network for time step t
-	def Step_var_act(self,t):
+	def step_var_act(self,t):
 		#if the activity is imposed, we inject a current every delay, meaning n_inj edges are activated
 		#at random
 		if t%self.delay==0:
@@ -299,13 +356,13 @@ class Min_EW(Gen_ATN):
 			self.Prune()
 			#record the events and identify the activated nodes
 			event = nx.Graph(); event.add_edges_from(active_edges)
-			self.Record_event(t,event)
+			self.record_event(t,event)
 			return t+1
 		else:
-			return self.Step_cst_act(t)
+			return self.step_cst_act(t)
 
 	#evolve the network for time step t
-	def Step_cst_act(self,t):
+	def step_cst_act(self,t):
 		#event = interaction graph at t; first determine the edges to be activated again
 		event = self.Old_update(t)
 		#determine the newborn edges
@@ -322,7 +379,7 @@ class Min_EW(Gen_ATN):
 		#accordingly
 		self.Prune()
 		#record the events and identify the activated nodes
-		self.Record_event(t,event)
+		self.record_event(t,event)
 		return t+1
 
 class Dyn_EW(Gen_ATN):
@@ -383,7 +440,7 @@ class Dyn_EW(Gen_ATN):
 		self.adjacent_graph.remove_edges_from(newborn)
 
 	#erase run data to be ready for a new run
-	def Refresh(self):
+	def refresh(self):
 		self.activated[:] = 0
 		self.events = []
 		self.social_graph = nx.Graph()
@@ -391,7 +448,7 @@ class Dyn_EW(Gen_ATN):
 		self.adjacent_graph.add_edges_from(self.ind_to_edge)
 
 	#evolve the network for time step t
-	def Step(self,t):
+	def step(self,t):
 		#event = interaction graph at t
 		#first determine the edges to be activated again
 		event = self.Draw_alive(t)
@@ -418,7 +475,7 @@ class Dyn_EW(Gen_ATN):
 		#and modifies the adjacent graph accordingly
 		self.Prune()
 		#sixth and last record the events and identify the activated nodes
-		self.Record_event(t,event)
+		self.record_event(t,event)
 		return t+1
 
 class Toy_egonet:
@@ -443,13 +500,13 @@ class Toy_egonet:
 
 	#compute the degree sequence (i.e. the sequence of egonet sizes)
 	#choice is of the form ('type',parameters)
-	def Compute_deg_seq(self,choice):
+	def compute_deg_seq(self,choice):
 		#uniform degree
 		if choice[0]=='cst':
 			self.deg_seq = [choice[1]]*self.N
 		#power law P(B) \propto B^{-\gamma}; \gamma = choice[1]
 		elif choice[0]=='power':
-			self.deg_seq = [int(np.round(el)) for el in Power_law((1,self.N-1),choice[1],size=self.N)]
+			self.deg_seq = [int(np.round(el)) for el in power_law((1,self.N-1),choice[1],size=self.N)]
 		#geometric distribution P(B) \propto (1-p)^{B-1}*p; B_c = choice[1]
 		#we have B_c = \frac{-1}{\log(1-p)} so p = 1-\exp(-\frac{1}{B_c})
 		elif choice[0]=='exp':
@@ -472,26 +529,26 @@ class Toy_egonet:
 			self.deg_seq[ind] += 1
 
 	#compute the egonets of each node such that the degree sequence is close to self.deg_seq
-	def Compute_egonet(self):
+	def compute_egonet(self):
 		self.social_graph = nx.configuration_model(self.deg_seq)
 		self.social_graph = nx.Graph(self.social_graph)
 		self.social_graph.remove_edges_from(nx.selfloop_edges(self.social_graph))
 
 	#erase run data to be ready for a new run
-	def Refresh(self):
+	def refresh(self):
 		self.activated[:] = 0
 		self.events = []
-		self.Compute_deg_seq(self.choice)
-		self.Compute_egonet()
+		self.compute_deg_seq(self.choice)
+		self.compute_egonet()
 
-	def Play(self,i):
+	def play(self,i):
 		inst_ngh = set([]) #nodes with whom i succeeds to interact
 		known_nodes = [k for k in self.social_graph[i]]
 		nb = min(self.m,len(known_nodes))
 		return set(rd.sample(known_nodes,nb))
 
 	#evolve the network for time step t
-	def Step(self,t):
+	def step(self,t):
 		nb_act = min(np.random.poisson(lam=self.a*self.N),self.N)
 		active_nodes = set(rd.sample(range(self.N),nb_act))
 		#if there is no node active, no interaction can occur
@@ -500,7 +557,7 @@ class Toy_egonet:
 		#graph of intentional interactions
 		event = nx.Graph()
 		for i in active_nodes:
-			inst_ngh = self.Play(i)
+			inst_ngh = self.play(i)
 			for j in inst_ngh:
 				event.add_edge(i,j)
 		if not event:
@@ -513,17 +570,17 @@ class Toy_egonet:
 			self.events.append([t,*edge])
 		return t+1
 
-	def Evolve(self,max_count=3,max_locount=5):
+	def evolve(self,max_count=3,max_locount=5):
 		#nb of nodes that have activated during the run
 		nb_nodes = 0; reinitialize = False; count = 0
 		while nb_nodes<self.N and count<max_count:
 			#reinitialize the TN
 			if reinitialize:
-				self.Refresh()
+				self.refresh()
 			#wait for the first interaction
 			t = 0; loc_count = 0
 			while t==0 and loc_count<max_locount:
-				t = self.Step(t)
+				t = self.step(t)
 				if t==0:
 					loc_count += 1
 			if loc_count==max_locount:
@@ -531,7 +588,7 @@ class Toy_egonet:
 			else:
 				#start the time flow
 				while t<self.duree and loc_count<max_locount:
-					newt = self.Step(t)
+					newt = self.step(t)
 					if newt==t:
 						loc_count += 1
 					else:
@@ -581,13 +638,13 @@ class Toy_modelV3:
 		#bond[i][j]['weight'] = social bond from i to j
 		self.bond = nx.Graph()
 		
-	def Edge_to_ind(self,i,j):
+	def edge_to_ind(self,i,j):
 		if i>j:
 			i,j = j,i
 		return i*(2*self.N-i-1)//2 + j-i-1
 
 	#evolve the network for time step t
-	def Step(self,t):
+	def step(self,t):
 		event = nx.Graph()
 		#first determine the edge activity
 		#note that edge activity cannot vanish or exceed the network capacity
@@ -631,14 +688,14 @@ class Toy_modelV3:
 		return t+1
 
 	#produce a TN of duration duree and save it
-	def Evolve(self,duree,name):
+	def evolve(self,duree,name):
 		#wait for the first interaction
 		t = 0
 		while t==0:
-			t = self.Step(t)
+			t = self.step(t)
 		#start the time flow
 		while t<duree:
-			t = self.Step(t)
+			t = self.step(t)
 			if t*100%duree==0:
 				print(str(t*100//duree)+" % computed")
 		#print the effective number of nodes
@@ -697,7 +754,7 @@ class Avalanche:
 		self.egonet.add_nodes_from(range(N))
 		self.alpha = np.zeros(N)
 		for i in range(N):
-			self.alpha[i] = Power_law(-1,1e-3)
+			self.alpha[i] = power_law(-1,1e-3)
 			#self.alpha_act[i] = self.alpha[i]
 		#events[k] = [t_k,i_k,j_k] = k^th interaction
 		self.events = []
@@ -707,7 +764,7 @@ class Avalanche:
 			for j in range(i+1,N):
 				self.ind_to_edge.append((i,j))
 
-	def Edge_to_ind(self,i,j):
+	def edge_to_ind(self,i,j):
 		if i>j:
 			i,j = j,i
 		return i*(2*self.N-i-1)//2 + j-i-1
@@ -722,7 +779,7 @@ class Avalanche:
 			for ind2 in range(ind1+1,nb_nodes):
 				j = active_nodes[ind2]
 				ngh2 = set(event[j])
-				self.comngh[self.Edge_to_ind(i,j)] = len(ngh1.intersection(ngh2))
+				self.comngh[self.edge_to_ind(i,j)] = len(ngh1.intersection(ngh2))
 
 	def Choose(self,i,nodes):
 		x = rd.random()
@@ -734,7 +791,7 @@ class Avalanche:
 		return nodes[j]
 
 	def Coeff_ngh(self,i,k):
-		ind = self.Edge_to_ind(i,k)
+		ind = self.edge_to_ind(i,k)
 		if ind in self.comngh:
 			return 1+self.comngh[ind]
 		return 1
@@ -770,7 +827,7 @@ class Avalanche:
 		return keys[j]
 
 	#i tries to establish m interactions
-	def Play(self,i,m):
+	def play(self,i,m):
 		inst_ngh = set([]) #nodes with whom i succeeds to interact
 		unknown_nodes = [k for k in range(self.N) if not self.egonet.has_edge(i,k) and k!=i]
 		known_nodes = [k for k in self.egonet[i]]
@@ -834,7 +891,7 @@ class Avalanche:
 
 	#update self.egonet and self.act
 	#R_event are the events which participate to the egonet edges reinforcement
-	def Update_egonet(self,R_event):
+	def update_egonet(self,R_event):
 		for i,j in R_event.edges:
 			for k,l in zip([i,j],[j,i]):
 				if self.egonet.has_edge(k,l):
@@ -860,13 +917,13 @@ class Avalanche:
 				self.act[i] -= self.alpha_act[i]*self.act[i]
 
 	#evolve the network for time step t
-	def Step(self,t):
+	def step(self,t):
 		event = nx.Graph()
 		#first descendents establish relations
 		for i,deg in self.descendents.items():
 			m = np.random.poisson(lam=deg)
 			if m>0:
-				event.add_edges_from([(i,j) for j in self.Play(i,m)])
+				event.add_edges_from([(i,j) for j in self.play(i,m)])
 		#second ancestors pop (note that ancestors are necessarily in even number)
 		#available nodes are inactive ones
 		available = set(range(self.N)).difference(set(event.nodes))
@@ -908,7 +965,7 @@ class Avalanche:
 		for i in nodes_to_remove:
 			del self.descendents[i]
 		#update the social bond graph and self.act
-		self.Update_egonet(event)
+		self.update_egonet(event)
 		#update the common neighbors
 		self.Compute_comngh(event)
 		#record the events
@@ -917,14 +974,14 @@ class Avalanche:
 		return t+1
 
 	#produce a TN of duration duree and save it
-	def Evolve(self,duree,name):
+	def evolve(self,duree,name):
 		#wait for the first interaction
 		t = 0
 		while t==0:
-			t = self.Step(t)
+			t = self.step(t)
 		#start the time flow
 		while t<duree:
-			t = self.Step(t)
+			t = self.step(t)
 			if t*100%duree==0:
 				print(str(t*100//duree)+" % computed")
 		#print the effective number of nodes
@@ -941,20 +998,29 @@ class Avalanche:
 		#save the events data
 		np.savetxt('data/atn/'+name+'.txt',correvent,fmt='%d')
 
-class ADM_class:
+class ADM_class(Gen_ATN):
 	"""Revisited Activity Driven model with Memory
-	basis version :
+	base version :
 	p_g=1e-2,c=1,p_c=0.3,p_u=1e-3
 	"""
-	def __init__(self,readable_param,m='random',a='lognorm',update='alpha,i',context='neutral',c_ij=True,egonet_growth='cst',remove='edge'):
+	def __init__(self,
+		readable_param:dict[str, Union[int, float]],
+		m:Literal['random', 'cst']='random',
+		a:Literal['lognorm', 'power', 'empirical', 'cst']='lognorm',
+		update:Literal[
+			'alpha,i', 'alpha', 'alpha,beta,i',
+			'alpha,beta,ij', 'linear', 'linear,decay', 'no_memory'
+		]='alpha,i',
+		context:Literal['neutral', 'equivalent', 'noise', None]='neutral',
+		c_ij:bool=True,
+		egonet_growth:Literal['cst', 'var']='cst',
+		remove:Literal['edge', 'node']='edge'
+	):
+		Gen_ATN.__init__(self, N=readable_param['N'], duree=readable_param['T'])
 		#minimum value for alpha or beta
 		self.alpha_min = 1e-3
 		#maximum value for alpha or beta
 		self.alpha_max = 1
-		#number of nodes
-		self.N = readable_param['N']
-		#temporal network duration
-		self.duree = readable_param['T']
 		#parameters of the node activity distribution
 		self.node_mu = readable_param['mu']
 		self.node_sig = readable_param['sigma']
@@ -996,30 +1062,30 @@ class ADM_class:
 			self.Get_alpha = self.Get_alpha_i
 			self.Get_beta = self.Get_alpha_i
 			self.alpha = []
-			self.Update_egonet = self.Update_egonet_Alpha
+			self.update_egonet = self.update_egonet_Alpha
 		elif update=='alpha':
 			self.Get_alpha = self.Get_alpha_cst
 			self.Get_beta = self.Get_alpha_cst
 			self.free_param['alpha'] = 0
-			self.Update_egonet = self.Update_egonet_Alpha
+			self.update_egonet = self.update_egonet_Alpha
 		elif update=='alpha,beta,i':
 			self.Get_alpha = self.Get_alpha_i
 			self.Get_beta = self.Get_beta_i
 			self.alpha = []
 			self.beta = []
-			self.Update_egonet = self.Update_egonet_Alpha
+			self.update_egonet = self.update_egonet_Alpha
 		elif update=='alpha,beta,ij':
 			self.Get_alpha = self.Get_alpha_ij
 			self.Get_beta = self.Get_beta_ij
 			self.alpha = []
 			self.beta = []
-			self.Update_egonet = self.Update_egonet_Alpha
+			self.update_egonet = self.update_egonet_Alpha
 		elif update=='linear':
-			self.Update_egonet = self.Update_egonet_Linear
+			self.update_egonet = self.update_egonet_Linear
 		elif update=='linear,decay':
-			self.Update_egonet = self.Update_egonet_Linear_with_decay
+			self.update_egonet = self.update_egonet_Linear_with_decay
 		elif update=='no_memory':
-			self.Update_egonet = self.Update_egonet_no_memory
+			self.update_egonet = self.update_egonet_no_memory
 		#choose the function computing the probability of growing the egonet
 		if egonet_growth=='cst':
 			self.Grow_egonet = self.Grow_egonet_cst
@@ -1054,10 +1120,10 @@ class ADM_class:
 			self.free_param['p_d'] = 0
 		#context memory : if True, the weight is modified by the number of common neighbours in the
 		#interaction graph
-		if c_ij==True:
+		if c_ij:
 			self.Context_coeff = self.Context_coeff_True
 			self.Compute_comngh = self.Compute_comngh_True
-		elif c_ij==False:
+		else:
 			self.Context_coeff = self.Context_coeff_False
 			self.Compute_comngh = self.Compute_comngh_False
 
@@ -1068,10 +1134,10 @@ class ADM_class:
 		#events[k] = [t_k,i_k,j_k] = k^th interaction
 		self.events = []
 
-	def Power_law_act(self):
+	def power_law_act(self):
 		return self.free_param['a_min']*(self.free_param['a_max']/self.free_param['a_min'])**rd.random()
 
-	def Power_law_alpha(self):
+	def power_law_alpha(self):
 		return self.alpha_min*(self.alpha_max/self.alpha_min)**rd.random()
 
 	def Get_m_cst(self,i):
@@ -1108,7 +1174,7 @@ class ADM_class:
 		return self.free_param['c']/(self.free_param['c']+self.social_graph.out_degree(i))
 
 	def Coeff_ngh(self,i,k):
-		ind = self.Edge_to_ind(i,k)
+		ind = self.edge_to_ind(i,k)
 		if ind in self.comngh:
 			return 1+self.comngh[ind]
 		return 1
@@ -1199,7 +1265,7 @@ class ADM_class:
 	#or reactivates a known link
 	#Each succesful interaction is accompanied by a bonus interaction (proba self.double)
 	#with a 2nd order ngh.
-	def Play(self,i):
+	def play(self,i):
 		inst_ngh = set() #nodes with whom i succeeds to interact
 		unknown_nodes = [k for k in range(self.N) if not self.social_graph.has_edge(i,k) and k!=i]
 		known_nodes = [k for k in self.social_graph[i]]
@@ -1281,7 +1347,7 @@ class ADM_class:
 	#edges in W_event cannot be weakened
 	#idea : initialize weight with random weights or with transitive weight, i.e. for
 	#(i,k) resulting from triadic closure of (i,j) and (j,k) : w_{i,k} = w_{i,j}*w_{j,k}
-	def Update_egonet_Alpha(self,R_event,W_event):
+	def update_egonet_Alpha(self,R_event,W_event):
 		#ties reinforcement
 		for i,j in R_event.edges:
 			for k,l in zip([i,j],[j,i]):
@@ -1298,7 +1364,7 @@ class ADM_class:
 
 	#update self.social_graph in case of a linear reinforcement process
 	#and a linear decay process
-	def Update_egonet_Linear_with_decay(self,R_event,W_event):
+	def update_egonet_Linear_with_decay(self,R_event,W_event):
 		#ties reinforcement
 		for i,j in R_event.edges:
 			for k,l in zip([i,j],[j,i]):
@@ -1313,7 +1379,7 @@ class ADM_class:
 					self.social_graph[i][j]['weight'] -= 1
 
 	#update self.social_graph in case of no memory: all social weights have a value of 1
-	def Update_egonet_no_memory(self,R_event,W_event):
+	def update_egonet_no_memory(self,R_event,W_event):
 		for i,j in R_event.edges:
 			for k,l in zip([i,j],[j,i]):
 				if not self.social_graph.has_edge(k,l):
@@ -1321,7 +1387,7 @@ class ADM_class:
 
 	#update self.social_graph in case of a linear reinforcement process
 	#and no linear decay process
-	def Update_egonet_Linear(self,R_event,W_event):
+	def update_egonet_Linear(self,R_event,W_event):
 		#ties reinforcement
 		for i,j in R_event.edges:
 			for k,l in zip([i,j],[j,i]):
@@ -1339,7 +1405,7 @@ class ADM_class:
 	def Context_noise(self,event,tot_event):
 		return event,event
 
-	def Edge_to_ind(self,i,j):
+	def edge_to_ind(self,i,j):
 		if i>j:
 			i,j = j,i
 		return i*(2*self.N-i-1)//2 + j-i-1
@@ -1354,14 +1420,14 @@ class ADM_class:
 			for ind2 in range(ind1+1,nb_nodes):
 				j = active_nodes[ind2]
 				ngh2 = set(event[j])
-				self.comngh[self.Edge_to_ind(i,j)] = len(ngh1.intersection(ngh2))
+				self.comngh[self.edge_to_ind(i,j)] = len(ngh1.intersection(ngh2))
 
 	#compute self.comngh
 	def Compute_comngh_False(self,event):
 		pass
 
 	#evolve the network for time step t
-	def Step(self,t):
+	def step(self,t):
 		active_nodes = set(())
 		for i in range(self.N):
 			if rd.random()<self.Get_act(i):
@@ -1372,7 +1438,7 @@ class ADM_class:
 		#graph of intentional interactions
 		event = nx.Graph()
 		for i in active_nodes:
-			inst_ngh = self.Play(i)
+			inst_ngh = self.play(i)
 			for j in inst_ngh:
 				event.add_edge(i,j)
 		if not event:
@@ -1385,7 +1451,7 @@ class ADM_class:
 		#update self.egonet
 		R_event,W_event = self.Context(event,tot_event)
 		#Hebbian step
-		self.Update_egonet(R_event,W_event)
+		self.update_egonet(R_event,W_event)
 		#pruning step
 		self.Pruning(R_event,W_event)
 		#compute self.comngh if necessary
@@ -1399,7 +1465,7 @@ class ADM_class:
 		return t+1
 
 	#erase run data to be ready for a new run
-	def Refresh(self):
+	def refresh(self):
 		self.events = []
 		self.social_graph = nx.DiGraph()
 		self.social_graph.add_nodes_from(range(self.N))
@@ -1421,49 +1487,12 @@ class ADM_class:
 		elif a=='power':
 			if self.free_param['a_min']>self.free_param['a_max']:
 				self.free_param['a_min'],self.free_param['a_max'] = self.free_param['a_max'],self.free_param['a_min']
-			self.act = [self.Power_law_act() for _ in range(self.N)]
+			self.act = [self.power_law_act() for _ in range(self.N)]
 		if update=='alpha,i':
-			self.alpha = [self.Power_law_alpha() for _ in range(self.N)]
+			self.alpha = [self.power_law_alpha() for _ in range(self.N)]
 		elif update=='alpha,beta,i':
-			self.alpha = [self.Power_law_alpha() for _ in range(self.N)]
-			self.beta = [self.Power_law_alpha() for _ in range(self.N)]
+			self.alpha = [self.power_law_alpha() for _ in range(self.N)]
+			self.beta = [self.power_law_alpha() for _ in range(self.N)]
 		elif update=='alpha,beta,ij':
-			self.alpha = np.asarray([[self.Power_law_alpha() for i in range(self.N)] for j in range(self.N)])
-			self.beta = np.asarray([[self.Power_law_alpha() for i in range(self.N)] for j in range(self.N)])
-
-	#produce a TN of duration self.duree
-	def Evolve(self,max_count=3,max_locount=5):
-		#nb of nodes that have activated during the run
-		nb_nodes = 0; reinitialize = False; count = 0
-		while nb_nodes<self.N and count<max_count:
-			#reinitialize the TN
-			if reinitialize:
-				self.Refresh()
-			#wait for the first interaction
-			t = 0; loc_count = 0
-			while t==0 and loc_count<max_locount:
-				t = self.Step(t)
-				if t==0:
-					loc_count += 1
-			if loc_count==max_locount:
-				reinitialize = True; count += 1
-			else:
-				#start the time flow
-				while t<self.duree and loc_count<max_locount:
-					newt = self.Step(t)
-					if newt==t:
-						loc_count += 1
-					else:
-						t = newt
-						loc_count = 0
-				if loc_count==max_locount:
-					reinitialize = True; count += 1
-				else:
-					#nb of nodes that have activated during the run
-					nb_nodes = np.sum(self.activated)
-					reinitialize = True; count += 1
-		if nb_nodes==self.N:
-			#return the events data
-			return np.asarray(self.events,dtype=int)
-		else:
-			return None
+			self.alpha = np.asarray([[self.power_law_alpha() for i in range(self.N)] for j in range(self.N)])
+			self.beta = np.asarray([[self.power_law_alpha() for i in range(self.N)] for j in range(self.N)])

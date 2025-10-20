@@ -5,7 +5,7 @@ sys.path.append(ROOT_DIR)
 
 import Librairies.Temp_net as tp
 import ADM_metrics as metrics
-import Librairies.centered_motifs as motifs_lib
+import libs.centered_motifs as motifs_lib
 from Librairies import utils
 
 import numpy as np

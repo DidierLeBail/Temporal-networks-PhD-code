@@ -1,13 +1,12 @@
-#study reversibility and causality in temporal networks
 import os
 import sys
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(PROJECT_ROOT)
-from libs import ETN
-from libs.settings import Raw_to_binned,Setup_Plot,Get_versions,Get_savename,Savename_to_name,Draw_simat,Cosim
-import libs.Temp_net as tp
-from libs import atn
-from libs.settings import LIST_MARKER,LIST_COLOR,Cosim_triple
+from Librairies import ETN
+from Librairies.utils import Raw_to_binned,Setup_Plot,Get_versions,Get_savename,Savename_to_name,Draw_simat,Cosim
+import Librairies.Temp_net as tp
+from Librairies import atn
+from Librairies.settings import LIST_MARKER,LIST_COLOR,Cosim_triple
 
 import numpy as np
 import random as rd
@@ -292,6 +291,31 @@ class Interpolate_distr_Old:
 				prod += np.prod(np.power(self.param_proba,n_vec),axis=1)
 			return np.sum(self.param_f[:,c]*self.param_omega[:,n]*prod)
 
+#if tuple_keys = (k0,k1,...,kn) then initialize to 1 the value dic[kn]...[k0]
+def Initialize_dic(dic,tuple_keys):
+	if len(tuple_keys)==1:
+		key = tuple_keys[0]
+		dic[key] = 1
+		return None
+	key = tuple_keys[-1]
+	dic[key] = {}
+	return Initialize_dic(dic[key],tuple_keys[:-1])
+
+#if tuple_keys = (k0,k1,...,kn) then increase by 1 the value dic[kn]...[k0]
+#and add the non-existing keys
+def Increase_dic(dic,tuple_keys):
+	if len(tuple_keys)==1:
+		key = tuple_keys[0]
+		if key in dic:
+			dic[key] += 1
+		else:
+			dic[key] = 1
+		return None
+	key = tuple_keys[-1]
+	if key in dic:
+		return Increase_dic(dic[key],tuple_keys[:-1])
+	return Initialize_dic(dic,tuple_keys)
+
 class Gluing_mat1d:
 	"""
 	exact number of gluing matrices for an integer n and a vector integer m of arbitrary size
@@ -488,18 +512,6 @@ def Approx_invert_nb(n1,n2):
 		vec[i] = 0
 	return res
 
-#normalize an histogram written as a dictionary of arbitrary depth:
-#for depth 2, after normalization, histo[key1][key2] = Proba(key2|key1)
-def Norm_dic_histo(histo):
-	bottom_found = False; norm = 0
-	for key,val in histo.items():
-		if type(val)!=dict:
-			bottom_found = True
-			norm += val
-	if bottom_found:
-		return {key:val/norm for key,val in histo.items()}
-	return {key:Norm_dic_histo(histo[key]) for key in histo.keys()}
-
 #compute the not normalized histogram of the activity duration
 #for the list of events event_train
 def Duration_histo(event_train):
@@ -576,40 +588,6 @@ def Train_weak_duration_histo(event_train,delay=2):
 		return {0.1:1}
 	return histo
 
-#rewrite an ECTN profile by exchanging 1 and 2 so that the first 1 or 2 encountered is a 1
-#allows to consider profiles under symmetry under 1<-->2
-def Rewrite_ECTN_prof_sym12(seq):
-	#find the first occurrence of a 2
-	ind_first2 = seq.find('2')
-	#if there is no 2, seq is unchanged
-	if ind_first2<0:
-		return seq
-	ind_first1 = seq.find('1')
-	#if we encounter 1 before 2, seq is unchanged
-	if ind_first1>=0 and ind_first1<ind_first2:
-		return seq
-	#exchange 1 and 2
-	new_seq = list(seq)
-	for ind,letter in enumerate(seq):
-		if letter=='2':
-			new_seq[ind] = '1'
-		elif letter=='1':
-			new_seq[ind] = '2'
-	return ''.join(new_seq)
-
-#identify a profile with its image under 1<-->2
-#also separate the transverse from single satellite profiles
-def Get_trans_single_sym12prof(satellites_prof):
-	sym_prof = {Rewrite_ECTN_prof_sym12(seq) for seq in satellites_prof}
-	trans_prof = set(); single_prof = set()
-	for seq in sym_prof:
-		#transverse profile: satellite common to both nodes of the central edge
-		if '3' in seq or '1' in seq and '2' in seq:
-			trans_prof.add(seq)
-		#single profile (note this is a NCTN profile)
-		else:
-			single_prof.add(seq)
-	return trans_prof,single_prof
 
 #compute the weight motif histogram: histo[w] = nb of distinct motifs that realize w times in the network
 def Get_weight_histo(dic_CTN):

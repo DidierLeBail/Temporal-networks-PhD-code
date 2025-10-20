@@ -127,7 +127,7 @@ def sample_ref_obs(TN):
 		TN.sliding_time_aggregation(agg)
 		dic = obs_lib.NCTN_to_weight(TN.TN,depth)
 
-		#retain only the 20 most frequent NCTN
+		# retain only the 20 most frequent NCTN
 		most_freq = sorted(dic.keys(),key=lambda seq:dic[seq],reverse=True)[:20]
 		giant_vec[agg] = {seq:dic[seq] for seq in most_freq}
 	obs_real['vector']['ETN3'] = dict(**giant_vec)
@@ -145,7 +145,7 @@ def collect_info(TN):
 	X,Y = zip(*TN.get_info.items())
 	return [list(X),[str(y) for y in Y]]
 
-#DISTANCE_TENSOR
+# DISTANCE_TENSOR
 ####################################################################################################################################
 
 class Distance_tensor:

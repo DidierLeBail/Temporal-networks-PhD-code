@@ -1,7 +1,6 @@
 import numpy as np
 import math
 import networkx as nx
-import matplotlib.pyplot as plt
 from libs.settings import Load_vector
 
 def All_NCTN_profiles(depth):
@@ -172,42 +171,6 @@ def Seq_to_net(seq,depth):
 			res.add_edge(val[i],val[i+1])
 	return res
 
-#visualize an edge centered motif
-#starting from its signature (string containing some 0, 1, 2 or 3)
-def Plot_ECTN(seq,depth,ax):
-	res = EdgeSeq_to_net(seq,depth)
-	#visualize the graph res
-	color_map = []
-	for node in res:
-		if node<2*depth:
-			color_map.append('red')
-		else:
-			color_map.append('green')
-	#we want to pin the central edge along a horizontal time-ordered axis
-	fixed_positions = {i:(i,0.5) for i in range(depth)}
-	for i in range(depth):
-		fixed_positions[i+depth] = (i,-0.5)
-	fixed_nodes = fixed_positions.keys()
-	pos = nx.spring_layout(res,pos=fixed_positions,fixed=fixed_nodes)
-	nx.draw_networkx(res,pos=pos,arrows=True,arrowstyle='-',node_color=color_map,with_labels=False,ax=ax)
-
-#visualize an egocentric motif
-#starting from its signature (string containing some 0 and/or 1)
-def Plot_NCTN(seq,depth,ax):
-	res = Seq_to_net(seq,depth)
-	#visualize the graph res
-	color_map = []
-	for node in res:
-		if node<depth:
-			color_map.append('red')
-		else:
-			color_map.append('green')
-	#we want to pin the central node along a horizontal time-ordered axis
-	fixed_positions = {i:(i,0) for i in range(depth)}
-	fixed_nodes = fixed_positions.keys()
-	pos = nx.spring_layout(res,pos=fixed_positions,fixed=fixed_nodes)
-	nx.draw_networkx(res,pos=pos,arrows=True,arrowstyle='-',node_color=color_map,with_labels=False,ax=ax)
-
 #given a motif, return all the possible motifs resulting from its shift in time (either forward or backward)
 #assuming this motif is the only one to occur
 def Shifted(seq,depth):
@@ -324,13 +287,6 @@ def TR_ECTNimage(seq,depth):
 			list_seq[k] = new_prof
 	return central_profile+''.join(sorted(list_seq))
 
-def Draw_single_ECTN(seq,depth,title):
-	fig,ax = plt.subplots(constrained_layout=True)
-	fontsize = 16
-	ax.set_axis_off()
-	ax.set_title(title,fontsize=fontsize)
-	Plot_ECTN(seq,depth,ax)
-
 #return the nb of satellites contributing to at least one complete triangle
 def Get_tri_nb_ECTN(seq,depth):
 	tri = 0
@@ -341,6 +297,94 @@ def Get_tri_nb_ECTN(seq,depth):
 				ok = True
 		tri += int(ok)
 	return tri
+
+#return the two NCTN profiles deduced from the ECTN sat prof seq
+def ECTN_to_NCTN_prof(seq):
+	prof1 = ''; prof2 = ''
+	for letter in seq:
+		if letter=='1':
+			prof1 += '1'; prof2 += '0'
+		elif letter=='2':
+			prof1 += '0'; prof2 += '1'
+		elif letter=='3':
+			prof1 += '1'; prof2 += '1'
+		else:
+			prof1 += '0'; prof2 += '0'
+	return prof1,prof2
+
+#exchange the '1' and '2' inside the string prof
+def Swap_conv_ECTN(prof):
+	res = ''
+	for letter in prof:
+		if letter=='1':
+			res += '2'
+		elif letter=='2':
+			res += '1'
+		else:
+			res += letter
+	return res
+
+#visualize the ten most frequent NCTN from dic_NCTN of depth
+#and save the figure at savepath
+def Draw_ten_freq_NCTN(dic_NCTN,depth,savepath):
+	motifs = sorted(dic_NCTN.keys(),key=lambda seq:dic_NCTN[seq],reverse=True)[:10]
+	fig,ax = plt.subplots(2,5,figsize=(12,6),constrained_layout=True)
+	norm = sum(dic_NCTN.values())
+	fontsize = 16
+	for k in range(2):
+		for l in range(5):
+			seq = motifs[5*k+l]
+			freq = dic_NCTN[seq]/norm
+			order = math.floor(math.log10(freq))
+			addtitle = str(np.round(freq*10**(-order),3))+'e'+str(order)
+			ax[k,l].set_axis_off()
+			ax[k,l].set_title(Ordinal(5*k+l)+'\nfreq: '+addtitle,fontsize=fontsize)
+			Plot_NCTN(seq,depth,ax[k,l])
+	plt.savefig(savepath)
+	plt.close()
+
+#visualize an edge centered motif
+#starting from its signature (string containing some 0, 1, 2 or 3)
+def Plot_ECTN(seq,depth,ax):
+	res = EdgeSeq_to_net(seq,depth)
+	#visualize the graph res
+	color_map = []
+	for node in res:
+		if node<2*depth:
+			color_map.append('red')
+		else:
+			color_map.append('green')
+	#we want to pin the central edge along a horizontal time-ordered axis
+	fixed_positions = {i:(i,0.5) for i in range(depth)}
+	for i in range(depth):
+		fixed_positions[i+depth] = (i,-0.5)
+	fixed_nodes = fixed_positions.keys()
+	pos = nx.spring_layout(res,pos=fixed_positions,fixed=fixed_nodes)
+	nx.draw_networkx(res,pos=pos,arrows=True,arrowstyle='-',node_color=color_map,with_labels=False,ax=ax)
+
+#visualize an egocentric motif
+#starting from its signature (string containing some 0 and/or 1)
+def Plot_NCTN(seq,depth,ax):
+	res = Seq_to_net(seq,depth)
+	#visualize the graph res
+	color_map = []
+	for node in res:
+		if node<depth:
+			color_map.append('red')
+		else:
+			color_map.append('green')
+	#we want to pin the central node along a horizontal time-ordered axis
+	fixed_positions = {i:(i,0) for i in range(depth)}
+	fixed_nodes = fixed_positions.keys()
+	pos = nx.spring_layout(res,pos=fixed_positions,fixed=fixed_nodes)
+	nx.draw_networkx(res,pos=pos,arrows=True,arrowstyle='-',node_color=color_map,with_labels=False,ax=ax)
+
+def Draw_single_ECTN(seq,depth,title):
+	fig,ax = plt.subplots(constrained_layout=True)
+	fontsize = 16
+	ax.set_axis_off()
+	ax.set_title(title,fontsize=fontsize)
+	Plot_ECTN(seq,depth,ax)
 
 #visualize the ten most frequent ECTN from dic_ECTN of depth
 #and save the figure at savepath
@@ -363,48 +407,3 @@ def Draw_ten_freq_ECTN(dic_ECTN,depth,savepath,starting_rank=0,normalize=True):
 			Plot_ECTN(seq,depth,ax[k,l])
 	plt.savefig(savepath)
 	plt.close()
-
-#return the two NCTN profiles deduced from the ECTN sat prof seq
-def ECTN_to_NCTN_prof(seq):
-	prof1 = ''; prof2 = ''
-	for letter in seq:
-		if letter=='1':
-			prof1 += '1'; prof2 += '0'
-		elif letter=='2':
-			prof1 += '0'; prof2 += '1'
-		elif letter=='3':
-			prof1 += '1'; prof2 += '1'
-		else:
-			prof1 += '0'; prof2 += '0'
-	return prof1,prof2
-
-#visualize the ten most frequent NCTN from dic_NCTN of depth
-#and save the figure at savepath
-def Draw_ten_freq_NCTN(dic_NCTN,depth,savepath):
-	motifs = sorted(dic_NCTN.keys(),key=lambda seq:dic_NCTN[seq],reverse=True)[:10]
-	fig,ax = plt.subplots(2,5,figsize=(12,6),constrained_layout=True)
-	norm = sum(dic_NCTN.values())
-	fontsize = 16
-	for k in range(2):
-		for l in range(5):
-			seq = motifs[5*k+l]
-			freq = dic_NCTN[seq]/norm
-			order = math.floor(math.log10(freq))
-			addtitle = str(np.round(freq*10**(-order),3))+'e'+str(order)
-			ax[k,l].set_axis_off()
-			ax[k,l].set_title(Ordinal(5*k+l)+'\nfreq: '+addtitle,fontsize=fontsize)
-			Plot_NCTN(seq,depth,ax[k,l])
-	plt.savefig(savepath)
-	plt.close()
-
-#exchange the '1' and '2' inside the string prof
-def Swap_conv_ECTN(prof):
-	res = ''
-	for letter in prof:
-		if letter=='1':
-			res += '2'
-		elif letter=='2':
-			res += '1'
-		else:
-			res += letter
-	return res

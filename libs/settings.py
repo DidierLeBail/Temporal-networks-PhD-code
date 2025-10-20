@@ -7,7 +7,7 @@ ADM_DIR = os.path.join(PROJECT_ROOT,'Articles/ADM_class/analysis')
 import numpy as np
 from math import *
 import matplotlib.pyplot as plt
-import libs.atn as atn
+import libs.models.defs as atn
 
 #global variables
 LIST_COLOR = ['red','black','blue','orange','green','purple','brown','pink']

@@ -2,7 +2,6 @@ from typing import List, Tuple, Union
 import numpy as np
 import networkx as nx
 
-pass
 def get_info(temp_net):
 	"""Compute the number of timestamps, nodes and temporal edges,
 	as well as the parameters of the node activity distribution viewed as the exponential of a two sided truncated Gaussian variable
@@ -60,21 +59,31 @@ class Graph_interaction:
 	This view of a temporal network is more relevant for aggregation, (some) randomizations, sampling most observables, etc.
 	"""
 	def __init__(self, graphs:List[nx.Graph], nb_nodes:Union[int, None]=None):
-		self.graphs = graphs
+		self._graphs = graphs
 		if nb_nodes is None:
 			self.nb_nodes = len(set().union(*(set(graph.nodes) for graph in self.graphs)))
-	
+		self.duration = len(graphs)
+
+	def __iter__(self):
+		def gen():
+			for graph in self._graphs:
+				yield graph
+		return gen()
+
+	def __getitem__(self, key):
+		return self._graphs[key]
+
 	def sliding_agg(self, agg:int):
 		"""Return the temporal graph at aggregation level `agg` (sliding aggregation)."""
 		# new_graphs[t] = aggregated graph of interactions on t^th time interval
-		nb_time = len(self.graph)
+		nb_time = len(self._graphs)
 		new_nb = nb_time - agg + 1
 		new_graphs = [nx.Graph() for _ in range(new_nb)]
 		
 		# initial graph
 		G = nx.Graph()
 		for k in range(agg):
-			for edge in self.graphs[k].edges:
+			for edge in self._graphs[k].edges:
 				if G.has_edge(*edge):
 					G[edge[0]][edge[1]]['weight'] += 1
 				else:
@@ -122,14 +131,14 @@ class Graph_interaction:
 		"""
 		static_net = nx.Graph()
 		if is_weighted:
-			for graph in self.graphs:
+			for graph in self._graphs:
 				for edge in graph.edges:
 					if static_net.has_edge(*edge):
 						static_net[edge[0]][edge[1]]['weight'] += 1
 					else:
 						static_net.add_edge(*edge, weight=1)
 		else:
-			for graph in self.graphs:
+			for graph in self._graphs:
 				static_net.add_edges_from(graph.edges)
 		return static_net
 
@@ -253,17 +262,16 @@ class Table_interaction:
 	
 	def to_graph(self):
 		"""Return self.data under the form of a sequence of undirected unweighted graphs."""
-		return Graph_interaction([nx.Graph(self.edges(t)) for t in range(len(self.data_by_time))], nb_nodes=self.nb_nodes)
+		return Graph_interaction(
+			[nx.Graph(self.edges(t)) for t in range(len(self.data_by_time))],
+			nb_nodes=self.nb_nodes
+		)
 
 	pass
 	def split_per_days(self, **kwargs):
 		"""Split `self.data` into multiple tables of interaction, one per identified day."""
 		self.format(**kwargs)
 		pass
-
-	def sliding_agg(self, agg):
-		self = self.to_graph()
-		self.sliding_agg(agg)
 
 class Temp_net:
 	"""A temporal network contains a table view and a graph view.

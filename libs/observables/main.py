@@ -21,10 +21,17 @@ node_to_time_weight[i] = nb of activation times of the node i
 obj_to_weight is a dictionary such that:
 NCTN_to_weight[seq] = total nb of activation times of the NCTN seq (here the weight is the space-time weight)
 """
-from typing import Literal, Union
+from typing import Literal, Union, List, Tuple
 import numpy as np
-import math
 import networkx as nx
+import os, sys
+ROOT_DIR = os.path.dirname(__file__)
+
+for _ in range(2):
+	ROOT_DIR = os.path.dirname(ROOT_DIR)
+sys.path.append(ROOT_DIR)
+
+from libs.temporal_network import Graph_interaction, Table_interaction
 
 pass
 # part of the API
@@ -34,36 +41,17 @@ def sample_motifs(temp_net,
 ):
 	pass
 
-
 class Histog(dict):
 	def __init__(self, *args, **kwargs):
 		dict.__init__(self, *args, **kwargs)
 
-	def initialize_data(self, tuple_keys):
-		"""If tuple_keys = (k0, k1, ..., kn) then initialize to 1 the value dic[kn]...[k0]"""
-		if len(tuple_keys) == 1:
-			key = tuple_keys[0]
+	def increase_count(self, key):
+		"""Increase by 1 the value dic[key]
+		and add the non-existing key."""
+		try:
+			self[key] += 1
+		except KeyError:
 			self[key] = 1
-			return None
-		key = tuple_keys[-1]
-		self[key] = {}
-		self[key].initialize_data(tuple_keys[:-1])
-
-	def increase_data(self, tuple_keys):
-		"""If tuple_keys = (k0, k1, ..., kn) then increase by 1 the value dic[kn]...[k0]
-		and add the non-existing keys"""
-		if len(tuple_keys) == 1:
-			key = tuple_keys[0]
-			if key in self:
-				self[key] += 1
-			else:
-				self[key] = 1
-			return None
-		key = tuple_keys[-1]
-		if key in self:
-			self[key].increase_data(tuple_keys[:-1])
-		else:
-			self.initialize_data(tuple_keys)
 
 	def to_exp(self):
 		"""return X, np.log10(Y) after normalization of the histo (X, Y)"""
@@ -74,6 +62,22 @@ class Histog(dict):
 		Y[:] /= norm
 		# transfo
 		return X, np.log10(Y)
+
+	def truncate(self, nb_of_items: Union[int, None]):
+		"""Keep only the most frequent items in self.
+		"""
+		if nb_of_items is not None:
+			return Histog(sorted(self.items(), key=lambda el: el[1])[:nb_of_items])
+		return self
+
+	def reduce(self):
+		r"""Return the histogram of the nb of occurrences of self.
+		(count the nb of occurrences of each value in self.values())
+		"""
+		res = Histog()
+		for count in self.values():
+			res.increase_count(count)
+		return res
 
 class Obj_obs:
 	"""pass"""
@@ -103,157 +107,177 @@ class Obj_obs:
 	def sample_inclusions(self, temp_net):
 		pass
 
-# builds the class `Obj_obs` at runtime (adds the methods)
-Obj_obs.meth_builder()
+def deco_add_reduce(sample_fct):
+	r"""Add the `reduce` keyword to `sample_fct`."""
+	def new_fct(*args, reduce: bool = False, **kwargs):
+		if reduce:
+			return sample_fct(*args, **kwargs).reduce()
+		else:
+			return sample_fct(*args, **kwargs)
+	new_fct.__name__ = sample_fct.__name__
+	new_fct.__doc__ = sample_fct.__doc__
+	return new_fct
 
+@deco_add_reduce
+def sample_space_time_weight(inclusions):
+	r"""Returns the histogram of the space-time weight distribution.
+	"""
+	return Histog([(key, len(val)) for key, val in inclusions.items()])
 
-class Solution:
-    def getMinFinal(self, test, prev_min):
-        if test <= 0:
-            res_min = prev_min - test + 1
-            res_final = 1
-        else:
-            res_min = prev_min
-            res_final = test
-        return res_min, res_final
-    
-    def init_loc(self):
-        """fill the initial location"""
-        if self.dungeon[0][0] <= 0:
-            self.init_health[(0, 0)] = {1: 1 - self.dungeon[0][0]}
-        else:
-            self.init_health[(0, 0)] = {1 + self.dungeon[0][0]: 1}
-    
-    def first_row(self):
-        """Fill the first row.
-        
-        Since there is a single path from (0, 0) to (0, j), we only need to store a single key in `init_health[(0, j)]`
-        """
-        for j in range(1, self.n):
-            prev_final = list(self.init_health[(0, j - 1)])[0]
-            prev_init = self.init_health[(0, j - 1)][prev_final]
+@deco_add_reduce
+def sample_time_weight(inclusions):
+	r"""For each object (key of `inclusions`), count the number of times
+	this object includes for a given space component.
+	Said otherwise res[obj][space_comp] = nb of inclusions of obj with
+	space_comp.
 
-            # test whether the initial health to arrive at the previous location is enough to overcome the current room
-            test = prev_final + self.dungeon[0][j]
-            new_init, new_final = self.getMinFinal(test, prev_init)
+	If there is a single key in `inclusions`, and that this key is the empty string,
+	return an histogram with a single level.
+	Otherwise, return an histogram with 2 levels.
+	"""
+	res = Histog()
+	try:
+		for incl in inclusions[""]:
+			res.increase_count(incl[0])
+	except KeyError:
+		for obj, incls in inclusions.items():
+			for incl in incls:
+				res.increase_count((obj, incl[0]))
+	return res
 
-            self.init_health[(0, j)] = {new_final: new_init}
-    
-    def first_col(self):
-        """Fill the first column.
-        
-        Since there is a single path from (0, 0) to (i, 0), we only need to store a single key in `init_health[(i, 0)]`"""
-        for i in range(1, self.m):
-            prev_final = list(self.init_health[(i - 1, 0)])[0]
-            prev_init = self.init_health[(i - 1, 0)][prev_final]
+@deco_add_reduce
+def sample_space_weight(inclusions):
+	r"""For each object (key of `inclusions`), res[obj][time_comp] = nb of inclusions of obj with
+	time_comp.
 
-            # test whether the initial health to arrive at the previous location is enough to overcome the current room
-            test = prev_final + self.dungeon[i][0]
-            new_init, new_final = self.getMinFinal(test, prev_init)
+	If there is a single key in `inclusions`, and that this key is the empty string,
+	return an histogram with a single level.
+	Otherwise, return an histogram with 2 levels.
+	"""
+	res = Histog()
+	try:
+		for incl in inclusions[""]:
+			res.increase_count(incl[1])
+	except KeyError:
+		for obj, incls in inclusions.items():
+			for incl in incls:
+				res.increase_count((obj, incl[1]))
+	return res
 
-            self.init_health[(i, 0)] = {new_final: new_init}
-   
-    def _garbage(self):
-        test1 = final_health[i - 1][j] + dungeon[i][j]
-        new_min1, new_final1 = self.getMinFinal(test1, min_health[i - 1][j])
+class NCTN_obs(Obj_obs):
+	r"""Node-Centered Temporal Neighborhood.
 
-        test2 = final_health[i][j - 1] + dungeon[i][j]
-        new_min2, new_final2 = self.getMinFinal(test2, min_health[i][j - 1])
+	NCTN, originally named ETN for Egocentric Temporal Neighborhood,
+	can be seen as a cylinder of radius 1, defined by a center and a height.
+	
+	Parameters
+	----------
+	depth : int
+		height of the cylinder ; number of time steps
+		we track interactions with the central node
+	
+	Attributes
+	----------
+	depth : int
 
-        if new_final1 < new_final2:
-            min_health[i][j] = new_min2
-            final_health[i][j] = new_final2
-        else:
-            min_health[i][j] = new_min1
-            final_health[i][j] = new_final1
-        print(i, j)
-        print(min_health[i][j])
-        print(final_health[i][j])
-        print()
+	References
+	----------
+	These motifs are introduced in this paper.
 
-        print("first column")
-        for i in range(1, self.m):
-            print("final pos", (i, 0))
-            print(self.init_health[(i, 0)])
-            print()
-        
-        print("first row")
-        for j in range(1, self.n):
-            print("final pos", (0, j))
-            print(self.init_health[(0, j)])
-            print()
-
-    def previous_paths(self, i, j):
-        """Iterate over all memorized paths arriving at (i, j).
-
-        For each path, return the pair (test_final, prev_init).
-        """
-        for pos in [(i - 1, j), (i, j - 1)]:
-            for final_health, init_health in self.init_health[pos].items():
-                yield final_health + self.dungeon[i][j], init_health
-
-    def calculateMinimumHP(self, dungeon: List[List[int]]) -> int:
-        """Calculate iteratively (start with first row and column, then browse
-        each location from left to right, top to bottom), for each location,
-        the following dictionary:
-        - keys are values for the final health (health the knight has after arriving at the location)
-        - dic[key] is the minimum initial health of the knight, required so that it makes it to the current location
-        with key as final amount of health
-        Each pair (key, value) corresponds to a given path the knight has taken from the initial to the current location.
-        The maximum number of keys that must be stored is the maximum number of values for the final health of the knight.
-        This number is at most of O(n * m).
-        """
-        # stores the dungeon and its size
-        self.dungeon = dungeon
-        self.m = len(dungeon)
-        self.n = len(dungeon[0])
-        
-        # init_health[(i, j)][final_health] = minimum initial health required for the knight to arrive at (i, j) with `final_health` as health.
-        self.init_health = {(i, j): {} for i in range(self.m) for j in range(self.n)}
-
-        # fill init_health[(0, 0)] (handle the initial location)
-        self.init_loc()
-        
-        # handle the first row
-        self.first_row()
-        
-        # handle the first column
-        self.first_col()
-        
-        # fill the center
-        for i in range(1, self.m):
-            for j in range(1, self.n):
-                # for each possible level of final health, we want to determine the minimum initial health
-                # required to arrive at (i, j) with that level of final health
-                for args in self.previous_paths(i, j):
-                    new_init, new_final = self.getMinFinal(*args)
-                    try:
-                        self.init_health[(i, j)][new_final] = min(self.init_health[(i, j)][new_final], new_init)
-                    except KeyError:
-                        self.init_health[(i, j)][new_final] = new_init
-
-            # release memory by removing the previous row
-            for j in range(self.n):
-                del self.init_health[(i - 1, j)]
-
-        return min(self.init_health[(self.m - 1, self.n - 1)].values())
-
-
-pass
-############################################################################################################################
-class NCTN(Obj_obs):
-	"""pass"""
+	Examples
+	--------
+	pass
+	"""
 
 	def __init__(self, depth: int, *args, **kwargs):
-		Obj_obs.__init__(*args, **kwargs)
+		Obj_obs.__init__(self, *args, **kwargs)
 		self.depth = depth
+	
+	def _NCTN_string(self,
+		temp_net: Graph_interaction,
+		central_node: int,
+		starting_time: int
+	):
+		"""
+		Parameters
+		----------
+		temp_net : Graph_interaction
+			The temporal network in which we mine motifs for.
+		inclusion : Tuple[int, int]
+			Pair (v, t) where v is the central node of the inclusion
+			and t its starting time.
 
+		Returns
+		-------
+		nctn_str : str
+			The string representration of the NCTN included in `temp_net`
+			at `(v, t)`.
+		"""
+		# dic_s[u][tau] = '1' if u is a satellite of v at time t + tau and '0' else
+		dic_s = {}
+		for tau in range(self.depth):
+			# if v is active (i.e. has at least one satellite)
+			if central_node in temp_net[starting_time + tau]:
+				for u in temp_net[starting_time + tau][central_node]:
+					if u in dic_s:
+						dic_s[u][tau] = '1'
+					else:
+						dic_s[u] = ['0'] * self.depth
+						dic_s[u][tau] = '1'
+		return ''.join(sorted([''.join(val) for val in dic_s.values()]))
+
+	def sample_inclusions(self, temp_net: Graph_interaction):
+		r"""Collect all maximal inclusions (number of occurrences) of NCTNs in `temp_net`.
+
+		A maximal inclusion is defined by a space and a time component.
+		In the case of NCTNs, the space component is the central node (cylinder center)
+		and the time component is the starting time of the inclusion (cylinder base).
+		"""
+		# res[s] = [(i, t)], where s is the string representation of a NCTN
+		# and (i, t) labels its maximal inclusions in `temp_net`
+		inclusions = {}
+		for t in range(temp_net.duration - self.depth + 1):
+			central_nodes = set().union(
+				*(set(temp_net[t + tau].nodes) for tau in range(self.depth))
+			)
+			for v in central_nodes:
+				nctn_str = self._NCTN_string(temp_net, v, t)
+				try:
+					inclusions[nctn_str].append((v, t))
+				except KeyError:
+					inclusions[nctn_str] = [(v, t)]
+		return inclusions
+
+class Edge_obs(Obj_obs):
+	r"""Contrary to NCTNs or ECTNs, there is only one edge (up to temporal graph isomorphism).
+
+	Thus, the inclusions of an edge in a temporal network are all associated to the same
+	object, which we will denote as the empty string '' or "".
+
+	Notes
+	-----
+	- Sampling the time weight in a temporal network yields its fully weighted aggregated graph.
+	- Sampling the inclusions yields the same data as the original temporal network.
+	- Sampling the space weight yields the activity level of the network
+	(nb of interactions across time).
+	"""
+	def sample_inclusions(self, temp_net: Graph_interaction):
+		r"""An inclusion here is given by ((i, j), t),
+		where i < j to ensure the unicity of the inclusion.
+		"""
+		inclusions = {"": []}
+		for t, snapshot in enumerate(temp_net):
+			inclusions[""].extend([(tuple(sorted(edge)), t) for edge in snapshot.edges])
+		return inclusions
+
+pass
+#############################################################################
 #values is produced e.g. via dic.values() and should contain integers
 #returns histo, where histo[val] = nb of occurrences of val in values
 def sample_values(values):
-	histo = {}
+	histo = Histog()
 	for val in values:
-		increase_dic(histo,(val,))
+		histo.increase_data((val,))
 	return histo
 
 #TN is a temporal graph viewed as a list of graphs

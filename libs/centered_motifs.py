@@ -99,20 +99,7 @@ def get_sub_NCTN(seq,depth):
 
 #sample centered motifs in a temporal network (list of graphs)
 #############################################################################################################
-def compute_NCTN_string(TN, t, v, depth):
-	"""compute the binary string representration of the NCTN instance starting at time t of central node v and given depth"""
-	#dic_s[u][tau] = '1' if u is a satellite of v at time t+tau and '0' else
-	dic_s = {}
-	for tau in range(depth):
-		#if v is active (i.e. has at least one satellite)
-		if v in TN[t+tau]:
-			for u in TN[t+tau][v]:
-				if u in dic_s:
-					dic_s[u][tau] = '1'
-				else:
-					dic_s[u] = ['0']*depth
-					dic_s[u][tau] = '1'
-	return ''.join(sorted([''.join(val) for val in dic_s.values()]))
+
 
 def compute_ECTN_string(TN,t,ind,depth):
 	"""compute the quaternary string representation of the ECTN instance starting at time t of central edge ind and given depth"""
@@ -167,27 +154,13 @@ def compute_ECTN_string(TN,t,ind,depth):
 		return central_profile+dir_seq
 	return central_profile+rev_seq
 
-#add NCTN instances to histo
-def add_NCTN(TN,histo,central_nodes,t,depth):
-	for v in central_nodes:
-		increase_dic(histo, (compute_NCTN_string(TN,t,v,depth),))
+
 
 def add_ECTN(TN,histo,central_edges,t,depth):
 	for ind in central_edges:
 		increase_dic(histo, (compute_ECTN_string(TN,t,ind,depth),))
 
-def get_NCTN_to_weight(TN,depth,trunc=None):
-	"""return histo[seq] = space-time weight of the NCTN of string representation seq and depth depth in the TN TN (list of graphs)"""
-	# histo[seq] = nb of occurrences of ETN seq in the whole temporal network
-	histo = {}
-	for t in range(len(TN)-depth+1):
-		central_nodes = set()
-		for tau in range(depth):
-			central_nodes = central_nodes.union(set(TN[t+tau].nodes()))
-		add_NCTN(TN, histo, central_nodes, t, depth)
-	if trunc is not None:
-		return truncate_histo(histo, trunc)
-	return histo
+
 
 #return histo[seq] = space-time weight of the ECTN of string representation seq and depth depth in the TN TN (list of graphs)
 def get_ECTN_to_weight(TN,depth,trunc=None):

@@ -31,6 +31,8 @@ Contains the formatted versions of all original data, according to the conventio
 - node labels from 0 to N-1
 - integer time starting from 0, and increasing by at most 1 from one interaction to the next
 - interactions organized as three columns (time, node 1, node 2), with the rows sorted by increasing time.
+- no self-loops
+- each edge is active at most once per time step
 
 ## papers
 Here you will find the code used to produce the material and plots used in the three aforementioned papers.
@@ -39,27 +41,15 @@ Here you will find the code used to produce the material and plots used in the t
 To reproduce the paper about the unifying framework.
 This folder contains the code needed to tune an ADM model with respect to a reference, as well as scoring a set of models.
 
-## flows
+### flows
 To reproduce the paper about the flows of temporal network properties.
-Here is the code needed to compute the flows of observables in a temporal network and label it by a string using a neural network. The code used to train this neural network is also present.
+Here is the code needed to compute the flows of observables in a temporal network and label it by a string using a neural network.
+The code used to train this neural network is also present.
 
-## motifs
+### motifs
 To reproduce the paper about the node and edge-centered motifs in temporal networks.
 Here is the code needed to evaluate hypotheses on the dynamics of a temporal network using edge-centered motifs. The principle of maximum entropy is also investigated.
 
-## libs
-Here you will find four files, of generic relevance.
-
-### Temp_net.py
-Generic tools to manage a temporal network, like converting a table of interactions into a sequence of graphs, transforming a temporal network using time aggregation or local time shuffling and sampling some observables.
-
-### atn.py
-Acronym standing for Artificial Temporal Networks.
-Definition of different models that generate temporal networks.
-In particular the ADM class is defined here.
-
-### ETN.py
-Generic tools to handle node and edge-centered motifs for themselves, i.e. independently of any temporal network.
-
-### utils.py
-Definition of global variables and specific tools used across the other files.
+## Notes
+I started refactoring the code I wrote during my PhD to make it more readeable and easier to reuse.
+However, this work is not my current priority, so contact me if you want a usable implementation of any of the algorithms described in my papers.

@@ -1,11 +1,14 @@
 # Temporal-networks-PhD-code
 
-Here is available the code used in the papers:
+## disclaimer
+When I started my PhD, I was a bad programmer and thus the code you will find in this repo will probably not work as is.
+Now I can write decent code (see my recent public pinned repos), but I did not take the time to refactor the present entire repository.
+Thus, please contact me directly if you are interested in the code used in one of the following papers:
 - [Modeling framework unifying contact and social networks](https://scholar.google.com/citations?view_op=view_citation&hl=fr&user=c_jb2A4AAAAJ&citation_for_view=c_jb2A4AAAAJ:u5HHmVD_uO8C)
 - [Flow of temporal network properties under local aggregation and time shuffling: a tool for characterizing, comparing and classifying temporal networks](https://scholar.google.com/citations?view_op=view_citation&hl=fr&user=c_jb2A4AAAAJ&citation_for_view=c_jb2A4AAAAJ:9yKSN-GCB0IC)
 - [Generalizing egocentric temporal neighborhoods to probe for spatial correlations in temporal networks and infer their topology](https://scholar.google.com/citations?view_op=view_citation&hl=fr&user=c_jb2A4AAAAJ&citation_for_view=c_jb2A4AAAAJ:2osOgNQ5qMEC)
 
-The code is organized as follows.
+The code is (or should be) organized as follows.
 
 ## data
 This folder contains both collected and generated data.
@@ -49,7 +52,3 @@ The code used to train this neural network is also present.
 ### motifs
 To reproduce the paper about the node and edge-centered motifs in temporal networks.
 Here is the code needed to evaluate hypotheses on the dynamics of a temporal network using edge-centered motifs. The principle of maximum entropy is also investigated.
-
-## Notes
-I started refactoring the code I wrote during my PhD to make it more readeable and easier to reuse.
-However, this work is not my current priority, so contact me if you want a usable implementation of any of the algorithms described in my papers.
